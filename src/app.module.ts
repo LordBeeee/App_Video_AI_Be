@@ -15,6 +15,10 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UserModule } from './modules/user/user.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { AiModelsModule } from './modules/ai-models/ai-models.module';
+import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
+import { KlingModule } from './common/kling/kling.module';
+import { VideoGenerationsModule } from './modules/video-generations/video-generations.module';
 
 @Module({
   imports: [
@@ -35,6 +39,10 @@ import { AuthModule } from './modules/auth/auth.module';
 
     UserModule,
     AuthModule,
+    AiModelsModule,
+    CloudinaryModule,
+    KlingModule,
+    VideoGenerationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

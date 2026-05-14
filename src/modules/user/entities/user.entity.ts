@@ -1,4 +1,6 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm'
+import { JoinColumn, ManyToOne } from 'typeorm';
+import { Role } from './role.entity';
 
 @Entity('users')
 export class User {
@@ -8,6 +10,10 @@ export class User {
   @Column({ name: 'role_id' })
   roleId!: number
 
+  @ManyToOne(() => Role, (role) => role.users)
+  @JoinColumn({ name: 'role_id' })
+  role!: Role;
+  
   @Column()
   email!: string
 
