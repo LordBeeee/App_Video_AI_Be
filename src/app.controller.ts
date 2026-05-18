@@ -17,16 +17,7 @@ export class AppController {
   @Get()
   getHello() {
     return {
-      message: 'Backend NestJS connected successfully',
-    };
-  }
-
-  @Get('health')
-  healthCheck() {
-    return {
-      status: 'ok',
-      app: 'BE_videoAI',
-      time: new Date().toISOString(),
+      message: 'OK',
     };
   }
 }
