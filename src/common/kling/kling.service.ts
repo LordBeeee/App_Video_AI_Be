@@ -129,8 +129,8 @@ export class KlingService {
    */
   async pollUntilDone(
     taskId: string,
-    intervalMs = 60000,
-    maxAttempts = 60,
+    intervalMs = 30000,
+    maxAttempts = 40,
   ): Promise<KlingTaskResult> {
     this.logger.log(`[Kling] Start polling taskId: ${taskId}`);
 

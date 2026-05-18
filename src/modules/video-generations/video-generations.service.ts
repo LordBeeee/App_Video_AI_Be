@@ -562,8 +562,8 @@ export class VideoGenerationsService {
   ) {
     try {
       await this.videoGenerationRepo.update(videoGenId, { status: 'processing' });
-
-      const taskResult = await this.klingService.pollUntilDone(taskId);
+      const taskResult = await this.klingService.pollUntilDone(taskId, 30000, 40);
+      // const taskResult = await this.klingService.pollUntilDone(taskId);
       const videoData = taskResult.task_result?.videos?.[0];
 
       if (!videoData) {
