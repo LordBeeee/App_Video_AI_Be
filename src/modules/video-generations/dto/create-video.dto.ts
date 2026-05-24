@@ -10,7 +10,8 @@ export class CreateVideoDto {
 
   // duration?: '5' | '10';
   duration?: string;
-  mode?: 'std' | 'pro';
+  // mode?: 'std' | 'pro';
+  mode?: 'std' | 'pro' | '4k';
   sound?: 'on' | 'off';
   sceneNumber?: number;
   

@@ -11,7 +11,8 @@ export interface KlingCreateVideoDto {
   negativePrompt?: string;
   // duration?: '5' | '10';
   duration?: string;
-  mode?: 'std' | 'pro';
+  // mode?: 'std' | 'pro';
+  mode?: 'std' | 'pro' | '4k';
   sound?: 'on' | 'off';
   externalTaskId?: string;
   callbackUrl?: string;

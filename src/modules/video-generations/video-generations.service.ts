@@ -13,13 +13,6 @@ import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { KlingService } from '../../common/kling/kling.service';
 import { CreateVideoDto } from './dto/create-video.dto';
 
-const RESOLUTION_PROMPT_MAP: Record<string, string> = {
-  '720p': '720p resolution video',
-  '1080p': '1080p Full HD resolution video',
-  '2k': '2K resolution video',
-  '4k': '4K Ultra HD resolution video',
-};
-
 @Injectable()
 export class VideoGenerationsService {
   private readonly logger = new Logger(VideoGenerationsService.name);
@@ -130,10 +123,7 @@ export class VideoGenerationsService {
     }
 
     // 5. Ghép resolution vào prompt
-    const resolutionText = RESOLUTION_PROMPT_MAP[dto.resolution] || '';
-    const finalPrompt = resolutionText
-      ? `${resolutionText}, ${dto.prompt}`
-      : dto.prompt;
+    const finalPrompt = dto.prompt;
 
     const klingModelName = model.code;
 
