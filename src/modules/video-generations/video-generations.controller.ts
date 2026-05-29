@@ -30,6 +30,43 @@ export class VideoGenerationsController {
       { storage: memoryStorage() }, // giữ trong RAM, không lưu disk
     ),
   )
+
+  @Get('task/:taskId/status')
+  getTaskStatus(@Param('taskId') taskId: string) {
+    return this.videoGenerationsService.getTaskStatus(taskId);
+  }
+
+  @Get(':id/status')
+    getVideoStatus(@Param('id') id: string) {
+    return this.videoGenerationsService.getVideoStatus(+id);
+  }
+
+  @Post('create-motion-control')
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'characterImage', maxCount: 1 },  // ảnh nhân vật (Required)
+        { name: 'referenceVideo', maxCount: 1 },  // video tham chiếu (Required)
+      ],
+      { storage: memoryStorage() },
+    ),
+  )
+
+  @Get('history')
+  getHistory(@Req() req: any) {
+    return this.videoGenerationsService.getHistory(req.user.id)
+  }
+
+  @Get('motion-control/history')
+  getMotionControlHistory(@Req() req: any) {
+    return this.videoGenerationsService.getMotionControlHistory(req.user.id);
+  }
+
+  @Get('video-gen/history')
+  getVideoGenHistory(@Req() req: any) {
+    return this.videoGenerationsService.getHistoryVideoGen(req.user.id);
+  }
+
   async createVideo(
     @Req() req: any,
     @Body() body: any,
@@ -64,31 +101,6 @@ export class VideoGenerationsController {
     );
   }
 
-  @Get('task/:taskId/status')
-  getTaskStatus(@Param('taskId') taskId: string) {
-    return this.videoGenerationsService.getTaskStatus(taskId);
-  }
-
-  @Get('history')
-  getHistory(@Req() req: any) {
-    return this.videoGenerationsService.getHistory(req.user.id)
-  }
-  
-  @Get(':id/status')
-    getVideoStatus(@Param('id') id: string) {
-    return this.videoGenerationsService.getVideoStatus(+id);
-  }
-  /////////// Motion Control Video //////////
-  @Post('create-motion-control')
-  @UseInterceptors(
-    FileFieldsInterceptor(
-      [
-        { name: 'characterImage', maxCount: 1 },  // ảnh nhân vật (Required)
-        { name: 'referenceVideo', maxCount: 1 },  // video tham chiếu (Required)
-      ],
-      { storage: memoryStorage() },
-    ),
-  )
   async createMotionControlVideo(
     @Req() req: any,
     @Body() body: any,
@@ -120,10 +132,5 @@ export class VideoGenerationsController {
       characterImage,
       referenceVideo,
     );
-  }
-
-  @Get('motion-control/history')
-  getMotionControlHistory(@Req() req: any) {
-    return this.videoGenerationsService.getMotionControlHistory(req.user.id);
   }
 }

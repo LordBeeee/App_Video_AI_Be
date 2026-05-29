@@ -679,6 +679,33 @@ export class VideoGenerationsService {
       createdAt: vg.createdAt,
     }))
   }
+  async getHistoryVideoGen(userId: number) {
+    const list = await this.videoGenerationRepo
+      .createQueryBuilder('vg')
+      .leftJoinAndSelect('vg.outputAsset', 'outputAsset')
+      .leftJoinAndSelect('vg.imageBeginAsset', 'imageBeginAsset')
+      .leftJoinAndSelect('vg.imageEndAsset', 'imageEndAsset')
+      .leftJoinAndSelect('vg.model', 'model')
+      .innerJoin('projects', 'p', 'p.id = vg.project_id AND p.user_id = :userId', { userId })
+      .where('vg.generation_type = :type', { type: 'standard' })
+      .orderBy('vg.created_at', 'DESC')
+      .limit(50)
+      .getMany()
+
+    return list.map((vg) => ({
+      id: vg.id,
+      status: vg.status,
+      promptSent: vg.motionPrompt,
+      videoUrl: vg.outputAsset?.storedUrl ?? null,
+      thumbnailUrl: vg.imageBeginAsset?.storedUrl ?? null,
+      beginImageUrl: vg.imageBeginAsset?.storedUrl ?? null,
+      endImageUrl: vg.imageEndAsset?.storedUrl ?? null,
+      modelName: vg.model?.name ?? 'Kling',
+      durationSeconds: vg.durationSeconds,
+      createdAt: vg.createdAt,
+    }))
+  }
+
   private async runMotionControlInBackground({
     videoGen,
     referenceVideoFile,
