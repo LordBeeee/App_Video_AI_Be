@@ -66,7 +66,7 @@ export class KlingService {
     const payload = {
       iss: ak,
       exp: now + 2700, // hết hạn sau 45 phút
-      nbf: now - 30,    // có hiệu lực từ 5 giây trước
+      nbf: now - 30,    // có hiệu lực từ 30 giây trước
     };
 
     return jwt.sign(payload, sk, {
