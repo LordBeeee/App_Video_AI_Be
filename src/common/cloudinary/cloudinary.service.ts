@@ -61,4 +61,26 @@ export class CloudinaryService {
       );
     });
   }
+
+  async uploadVideoBuffer(
+    buffer: Buffer,
+    folder: string,
+    publicId: string,
+  ): Promise<{ secure_url: string; public_id: string }> {
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(  // ← bỏ this.
+        {
+          folder,
+          public_id: publicId,
+          resource_type: 'video',
+        },
+        (error, result) => {
+          if (error) return reject(error);
+          resolve({ secure_url: result!.secure_url, public_id: result!.public_id });
+        },
+      );
+
+      streamifier.createReadStream(buffer).pipe(uploadStream);  // ← dùng streamifier như uploadBuffer
+    });
+  }
 }

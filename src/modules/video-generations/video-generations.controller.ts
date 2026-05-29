@@ -14,8 +14,7 @@ import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { VideoGenerationsService } from './video-generations.service';
-import { CreateVideoDto } from './dto/create-video.dto';
-
+import { CreateMotionControlVideoDto, CreateVideoDto } from './dto/create-video.dto';
 @Controller('video-generations')
 @UseGuards(JwtAuthGuard)
 export class VideoGenerationsController {
@@ -78,6 +77,53 @@ export class VideoGenerationsController {
   @Get(':id/status')
     getVideoStatus(@Param('id') id: string) {
     return this.videoGenerationsService.getVideoStatus(+id);
-    }
-  
+  }
+  /////////// Motion Control Video //////////
+  @Post('create-motion-control')
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'characterImage', maxCount: 1 },  // ảnh nhân vật (Required)
+        { name: 'referenceVideo', maxCount: 1 },  // video tham chiếu (Required)
+      ],
+      { storage: memoryStorage() },
+    ),
+  )
+  async createMotionControlVideo(
+    @Req() req: any,
+    @Body() body: any,
+    @UploadedFiles()
+    files: {
+      characterImage?: Express.Multer.File[];
+      referenceVideo?: Express.Multer.File[];
+    },
+  ) {
+    const characterImage = files?.characterImage?.[0];
+    const referenceVideo = files?.referenceVideo?.[0];
+
+    if (!characterImage) throw new BadRequestException('Character image là bắt buộc');
+    if (!referenceVideo) throw new BadRequestException('Reference video là bắt buộc');
+
+    const dto: CreateMotionControlVideoDto = {
+      modelId: Number(body.modelId),
+      prompt: body.prompt,
+      negativePrompt: body.negativePrompt,
+      characterOrientation: body.characterOrientation || 'image',
+      keepOriginalSound: (body.keepOriginalSound as 'yes' | 'no') ?? 'yes',
+      mode: body.mode || 'pro',
+      sceneNumber: body.sceneNumber ? Number(body.sceneNumber) : 1,
+    };
+
+    return this.videoGenerationsService.createMotionControlVideo(
+      req.user.id,
+      dto,
+      characterImage,
+      referenceVideo,
+    );
+  }
+
+  @Get('motion-control/history')
+  getMotionControlHistory(@Req() req: any) {
+    return this.videoGenerationsService.getMotionControlHistory(req.user.id);
+  }
 }

@@ -76,6 +76,26 @@ export class VideoGeneration {
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt!: Date;
 
+  @Column({ name: 'generation_type', length: 50, default: 'standard' })
+  generationType!: string; // 'standard' | 'motion_control'
+
+  @Column({ name: 'motion_reference_asset_id', type: 'bigint', nullable: true })
+  motionReferenceAssetId!: number;
+
+  @Column({ name: 'keep_original_sound', type: 'boolean', default: true })
+  keepOriginalSound!: boolean;
+
+  @Column({ name: 'character_orientation', length: 10, nullable: true })
+  characterOrientation!: string; // 'image' | 'video'
+
+  @Column({ name: 'generation_mode', length: 20, default: 'std' })
+  generationMode!: string; // 'std' | 'pro' | '4k'
+
+  // Thêm relation cho motion reference asset:
+  @ManyToOne(() => Asset)
+  @JoinColumn({ name: 'motion_reference_asset_id' })
+  motionReferenceAsset!: Asset;
+
   @ManyToOne(() => AiModel)
   @JoinColumn({ name: 'model_id' })
   model!: AiModel;

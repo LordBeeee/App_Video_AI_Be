@@ -1,18 +1,29 @@
 export class CreateVideoDto {
   modelId!: number;
-  // projectId!: number;
-  // resolution để ghép vào prompt
-  // '720p' | '1080p' | '2k' | '4k'
   resolution!: string;
 
   prompt!: string;
   negativePrompt?: string;
 
-  // duration?: '5' | '10';
   duration?: string;
-  // mode?: 'std' | 'pro';
   mode?: 'std' | 'pro' | '4k';
   sound?: 'on' | 'off';
   sceneNumber?: number;
-  
+}
+
+export class CreateMotionControlVideoDto {
+  modelId!: number;
+
+  prompt?: string;
+  negativePrompt?: string;
+
+  // 'image': khớp hướng theo ảnh nhân vật (max video ref 10s)
+  // 'video': khớp hướng theo video ref (max 30s)
+  characterOrientation!: 'image' | 'video';
+
+  keepOriginalSound?: 'yes' | 'no';
+
+  mode?: 'std' | 'pro';
+
+  sceneNumber?: number;
 }
