@@ -190,6 +190,7 @@ export class VideoGenerationsController {
       mode: body.mode || 'pro',
       sound: body.sound || 'off',
       sceneNumber: body.sceneNumber ? Number(body.sceneNumber) : 1,
+      cost: body.cost ? Math.round(Number(body.cost)) : 0,
     };
 
     return this.videoGenerationsService.createVideo(
@@ -233,6 +234,7 @@ export class VideoGenerationsController {
       keepOriginalSound: (body.keepOriginalSound as 'yes' | 'no') ?? 'yes',
       mode: body.mode || 'pro',
       sceneNumber: body.sceneNumber ? Number(body.sceneNumber) : 1,
+      cost: body.cost ? Math.round(Number(body.cost)) : 0,
     };
 
     return this.videoGenerationsService.createMotionControlVideo(

@@ -9,6 +9,7 @@ export class CreateVideoDto {
   mode?: 'std' | 'pro' | '4k';
   sound?: 'on' | 'off';
   sceneNumber?: number;
+  cost?: number;
 }
 
 export class CreateMotionControlVideoDto {
@@ -26,4 +27,5 @@ export class CreateMotionControlVideoDto {
   mode?: 'std' | 'pro';
 
   sceneNumber?: number;
+  cost?: number;
 }

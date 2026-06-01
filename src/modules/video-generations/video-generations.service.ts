@@ -162,6 +162,7 @@ export class VideoGenerationsService {
         status: 'queued',
         externalTaskId: taskId,
         durationSeconds: Number(dto.duration || 5),
+        cost: dto.cost ?? 0,
         params: { resolution: dto.resolution, mode: dto.mode },
         requestPayload: {
           modelName: klingModelName,
@@ -498,6 +499,7 @@ export class VideoGenerationsService {
       characterOrientation: dto.characterOrientation,
       keepOriginalSound: dto.keepOriginalSound === 'yes',
       generationMode: dto.mode || 'pro',
+      cost: dto.cost ?? 0,
       params: { mode: dto.mode, characterOrientation: dto.characterOrientation },
       requestPayload: {},
       responsePayload: {},
