@@ -12,6 +12,12 @@ export class UserController {
     return this.userService.findMe(req.user.id);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('me/stats')
+  getStats(@Req() req: any) {
+    return this.userService.getStats(req.user.id);
+  }
+
   @Get()
   findAll() {
     return this.userService.findAll()
