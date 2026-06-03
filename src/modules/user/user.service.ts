@@ -75,4 +75,81 @@ export class UserService {
       totalCost:    Number(row.total_cost),
     };
   }
+
+  async getDailyStats(userId: number, month: number, year: number) {
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const TZ = 'Asia/Ho_Chi_Minh';
+
+    const [promptRows, imageRows, videoRows] = await Promise.all([
+      this.dataSource.query(
+        `SELECT
+           EXTRACT(DAY FROM pg.created_at AT TIME ZONE $4)::int AS day,
+           COUNT(*)::int                                          AS cnt,
+           COALESCE(SUM(pg.cost), 0)::bigint                    AS cost
+         FROM prompt_generations pg
+         JOIN projects p ON p.id = pg.project_id
+         WHERE p.user_id = $1
+           AND EXTRACT(MONTH FROM pg.created_at AT TIME ZONE $4) = $2
+           AND EXTRACT(YEAR  FROM pg.created_at AT TIME ZONE $4) = $3
+         GROUP BY 1`,
+        [userId, month, year, TZ],
+      ),
+
+      this.dataSource.query(
+        `SELECT
+           EXTRACT(DAY FROM ig.created_at AT TIME ZONE $4)::int AS day,
+           COUNT(*)::int                                          AS cnt,
+           COALESCE(SUM(ig.cost), 0)::bigint                    AS cost
+         FROM image_generations ig
+         JOIN projects p ON p.id = ig.project_id
+         WHERE p.user_id = $1
+           AND EXTRACT(MONTH FROM ig.created_at AT TIME ZONE $4) = $2
+           AND EXTRACT(YEAR  FROM ig.created_at AT TIME ZONE $4) = $3
+         GROUP BY 1`,
+        [userId, month, year, TZ],
+      ),
+
+      this.dataSource.query(
+        `SELECT
+           EXTRACT(DAY FROM vg.created_at AT TIME ZONE $4)::int AS day,
+           COUNT(*)::int                                          AS cnt,
+           COALESCE(SUM(vg.cost), 0)::bigint                    AS cost
+         FROM video_generations vg
+         JOIN projects p ON p.id = vg.project_id
+         WHERE p.user_id = $1
+           AND EXTRACT(MONTH FROM vg.created_at AT TIME ZONE $4) = $2
+           AND EXTRACT(YEAR  FROM vg.created_at AT TIME ZONE $4) = $3
+         GROUP BY 1`,
+        [userId, month, year, TZ],
+      ),
+    ]);
+
+    type DayEntry = { cnt: number; cost: number };
+    const toMap = (rows: any[]): Record<number, DayEntry> =>
+      Object.fromEntries(
+        rows.map((r) => [r.day, { cnt: Number(r.cnt), cost: Number(r.cost) }]),
+      );
+
+    const pm = toMap(promptRows);
+    const im = toMap(imageRows);
+    const vm = toMap(videoRows);
+
+    const generations: { day: number; briefs: number; images: number; videos: number }[] = [];
+    const spending:    { day: number; total: number }[] = [];
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      generations.push({
+        day:    d,
+        briefs: pm[d]?.cnt  ?? 0,
+        images: im[d]?.cnt  ?? 0,
+        videos: vm[d]?.cnt  ?? 0,
+      });
+      spending.push({
+        day:   d,
+        total: (pm[d]?.cost ?? 0) + (im[d]?.cost ?? 0) + (vm[d]?.cost ?? 0),
+      });
+    }
+
+    return { generations, spending };
+  }
 }
