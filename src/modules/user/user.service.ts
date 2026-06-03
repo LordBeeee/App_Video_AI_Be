@@ -20,10 +20,6 @@ export class UserService {
     });
   }
 
-  findAll() {
-    return this.userRepository.find();
-  }
-
   async findMe(userId: number) {
     const user = await this.userRepository.findOne({
       where: { id: userId },
@@ -154,5 +150,29 @@ export class UserService {
     }
 
     return { generations, spending };
+  }
+
+  findById(id: number) {
+    return this.userRepository.findOne({
+      where: { id },
+      relations: ['role'],
+    });
+  }
+
+  findAll() {
+    // Không trả passwordHash
+    return this.userRepository.find({
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        avatarUrl: true,
+        roleId: true,
+        status: true,
+        lastLoginAt: true,
+        createdAt: true,
+      },
+      relations: ['role'],
+    });
   }
 }
