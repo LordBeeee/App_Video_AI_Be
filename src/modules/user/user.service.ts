@@ -137,13 +137,13 @@ export class UserService {
     const im = toMap(imageRows);
     const vm = toMap(videoRows);
 
-    const generations: { day: number; briefs: number; images: number; videos: number }[] = [];
+    const generations: { day: number; prompt: number; images: number; videos: number }[] = [];
     const spending:    { day: number; total: number }[] = [];
 
     for (let d = 1; d <= daysInMonth; d++) {
       generations.push({
         day:    d,
-        briefs: pm[d]?.cnt  ?? 0,
+        prompt: pm[d]?.cnt  ?? 0,
         images: im[d]?.cnt  ?? 0,
         videos: vm[d]?.cnt  ?? 0,
       });
