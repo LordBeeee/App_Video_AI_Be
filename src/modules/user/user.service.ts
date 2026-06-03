@@ -89,6 +89,7 @@ export class UserService {
          FROM prompt_generations pg
          JOIN projects p ON p.id = pg.project_id
          WHERE p.user_id = $1
+           AND pg.status = 'succeeded'
            AND EXTRACT(MONTH FROM pg.created_at AT TIME ZONE $4) = $2
            AND EXTRACT(YEAR  FROM pg.created_at AT TIME ZONE $4) = $3
          GROUP BY 1`,
@@ -103,6 +104,7 @@ export class UserService {
          FROM image_generations ig
          JOIN projects p ON p.id = ig.project_id
          WHERE p.user_id = $1
+           AND ig.status = 'succeeded'
            AND EXTRACT(MONTH FROM ig.created_at AT TIME ZONE $4) = $2
            AND EXTRACT(YEAR  FROM ig.created_at AT TIME ZONE $4) = $3
          GROUP BY 1`,
@@ -117,6 +119,7 @@ export class UserService {
          FROM video_generations vg
          JOIN projects p ON p.id = vg.project_id
          WHERE p.user_id = $1
+           AND vg.status = 'succeeded'
            AND EXTRACT(MONTH FROM vg.created_at AT TIME ZONE $4) = $2
            AND EXTRACT(YEAR  FROM vg.created_at AT TIME ZONE $4) = $3
          GROUP BY 1`,
