@@ -109,8 +109,8 @@ export class AuthService {
     // Set httpOnly cookie — JS không đọc được
     const cookieOptions = {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: 'strict' as const,
+      secure: true,        
+      sameSite: 'none' as const,
     };
 
     res.cookie('access_token', accessToken, {
@@ -156,8 +156,8 @@ export class AuthService {
 
       res.cookie('access_token', newAccessToken, {
         httpOnly: true,
-        secure: this.configService.get('NODE_ENV') === 'production',
-        sameSite: 'strict',
+        secure: true,
+        sameSite: 'none',
         maxAge: 15 * 60 * 1000,
       });
 
