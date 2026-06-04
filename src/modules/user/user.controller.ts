@@ -28,21 +28,23 @@
 //     @Query('year') year: string,
 //   ) {
 //     const now = new Date();
-//     const m = parseInt(month) || now.getMonth() + 1;
-//     const y = parseInt(year) || now.getFullYear();
-//     return this.userService.getDailyStats(req.user.id, m, y);
+//     return this.userService.getDailyStats(
+//       req.user.id,
+//       parseInt(month) || now.getMonth() + 1,
+//       parseInt(year) || now.getFullYear(),
+//     );
 //   }
 
-//   // Chỉ admin (roleId = 1) mới truy cập được
 //   @UseGuards(JwtAuthGuard, RolesGuard)
-//   @Roles(1)
+//   @Roles(1) // chỉ admin
 //   @Get()
 //   findAll() {
 //     return this.userService.findAll();
 //   }
 // }
-import { Controller, Get, UseGuards, Req, Query } from '@nestjs/common'
-import { UserService } from './user.service'
+import { Controller, Get, Post, Patch, Param, Body, UseGuards, Req, Query } from '@nestjs/common'
+import { CreateUserDto } from './dto/create-user.dto'
+import { UserService } from './user.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -78,10 +80,43 @@ export class UserController {
     );
   }
 
+  // ── Admin: employee stats ──────────────────────────────────────
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(1) // chỉ admin
+  @Roles(1)
+  @Get('employee-stats')          // đặt trước :id để tránh conflict
+  getEmployeeStats() {
+    return this.userService.getEmployeeStats();
+  }
+
+  // ── Admin: list employees ──────────────────────────────────────
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(1)
   @Get()
-  findAll() {
-    return this.userService.findAll();
+  findAll(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.userService.findAllEmployees(
+      parseInt(page ?? '1'),
+      parseInt(limit ?? '6'),
+      search,
+    );
+  }
+
+  // ── Admin: toggle lock/unlock ──────────────────────────────────
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(1)
+  @Patch(':id/toggle-status')
+  toggleStatus(@Param('id') id: string) {
+    return this.userService.toggleUserStatus(parseInt(id));
+  }
+
+  // thêm sau getEmployeeStats
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(1)
+  @Post()
+  createEmployee(@Body() dto: CreateUserDto) {
+    return this.userService.createEmployee(dto)
   }
 }

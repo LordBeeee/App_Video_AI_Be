@@ -1,7 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common'
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { User } from './entities/user.entity';
+import * as bcrypt from 'bcrypt'
+import { CreateUserDto } from './dto/create-user.dto'
 
 @Injectable()
 export class UserService {
@@ -33,6 +35,7 @@ export class UserService {
       email:       user.email,
       fullName:    user.fullName,
       avatarUrl:   user.avatarUrl,
+      phone:       user.phone,
       roleId:      user.roleId,
       roleName:    user.role?.name,
       status:      user.status,
@@ -167,6 +170,7 @@ export class UserService {
         email: true,
         fullName: true,
         avatarUrl: true,
+        phone: true,
         roleId: true,
         status: true,
         lastLoginAt: true,
@@ -174,5 +178,115 @@ export class UserService {
       },
       relations: ['role'],
     });
+  }
+
+  async findAllEmployees(page = 1, limit = 10, search?: string) {
+    const skip = (page - 1) * limit;
+
+    const qb = this.userRepository
+      .createQueryBuilder('u')
+      .select(['u.id', 'u.email', 'u.fullName', 'u.avatarUrl', 'u.phone', 'u.roleId', 'u.status', 'u.lastLoginAt', 'u.createdAt'])
+      .leftJoinAndSelect('u.role', 'role')
+      .where('u.roleId = :roleId', { roleId: 2 });
+
+    if (search?.trim()) {
+      qb.andWhere('(u.fullName ILIKE :search OR u.email ILIKE :search)', {
+        search: `%${search.trim()}%`,
+      });
+    }
+
+    const [users, total] = await qb
+      .orderBy('u.createdAt', 'DESC')
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
+    return { users, total, page, limit };
+  }
+
+  async getEmployeeStats() {
+    const TZ = 'Asia/Ho_Chi_Minh';
+    const now = new Date();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+
+    const [total, active, banned, spendingRows] = await Promise.all([
+      this.userRepository.count({ where: { roleId: 2 } }),
+      this.userRepository.count({ where: { roleId: 2, status: 'active' } }),
+      this.userRepository.count({ where: { roleId: 2, status: 'banned' } }),
+      this.dataSource.query(
+        `SELECT COALESCE(
+          (SELECT SUM(pg.cost) FROM prompt_generations pg
+            JOIN projects p ON p.id = pg.project_id
+            JOIN users u ON u.id = p.user_id
+            WHERE u.role_id = 2 AND pg.status = 'succeeded'
+              AND EXTRACT(MONTH FROM pg.created_at AT TIME ZONE $3) = $1
+              AND EXTRACT(YEAR  FROM pg.created_at AT TIME ZONE $3) = $2), 0
+        ) +
+        COALESCE(
+          (SELECT SUM(ig.cost) FROM image_generations ig
+            JOIN projects p ON p.id = ig.project_id
+            JOIN users u ON u.id = p.user_id
+            WHERE u.role_id = 2 AND ig.status = 'succeeded'
+              AND EXTRACT(MONTH FROM ig.created_at AT TIME ZONE $3) = $1
+              AND EXTRACT(YEAR  FROM ig.created_at AT TIME ZONE $3) = $2), 0
+        ) +
+        COALESCE(
+          (SELECT SUM(vg.cost) FROM video_generations vg
+            JOIN projects p ON p.id = vg.project_id
+            JOIN users u ON u.id = p.user_id
+            WHERE u.role_id = 2 AND vg.status = 'succeeded'
+              AND EXTRACT(MONTH FROM vg.created_at AT TIME ZONE $3) = $1
+              AND EXTRACT(YEAR  FROM vg.created_at AT TIME ZONE $3) = $2), 0
+        ) AS monthly_spending`,
+        [month, year, TZ],
+      ),
+    ]);
+
+    return {
+      total,
+      active,
+      banned,
+      monthlySpending: Number(spendingRows[0]?.monthly_spending ?? 0),
+    };
+  }
+
+  async toggleUserStatus(id: number) {
+    const user = await this.userRepository.findOne({ where: { id } });
+    if (!user) throw new NotFoundException('Không tìm thấy người dùng');
+
+    const newStatus = user.status === 'active' ? 'banned' : 'active';
+    await this.userRepository.update(id, { status: newStatus, updatedAt: new Date() });
+
+    return { id, status: newStatus };
+  }
+
+  async createEmployee(dto: CreateUserDto) {
+    const exists = await this.userRepository.findOne({ where: { email: dto.email } })
+    if (exists) throw new ConflictException('Email đã được sử dụng')
+
+    const passwordHash = await bcrypt.hash(dto.password, 10)
+
+    const user = this.userRepository.create({
+      roleId:       2,
+      email:        dto.email,
+      fullName:     dto.fullName,
+      phone:        dto.phone,
+      passwordHash,
+      status:       'active',
+      createdAt:    new Date(),
+      updatedAt:    new Date(),
+    })
+
+    const saved = await this.userRepository.save(user)
+
+    return {
+      id:        saved.id,
+      email:     saved.email,
+      fullName:  saved.fullName,
+      phone:     saved.phone,
+      status:    saved.status,
+      createdAt: saved.createdAt,
+    }
   }
 }
