@@ -23,6 +23,9 @@ export class User {
   @Column({ name: 'full_name', nullable: true })
   fullName?: string
 
+  @Column({ nullable: true })
+  username?: string
+
   @Column({ name: 'avatar_url', nullable: true })
   avatarUrl?: string
 
