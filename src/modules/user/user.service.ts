@@ -308,4 +308,13 @@ export class UserService {
 
     return { success: true, message: 'Reset mật khẩu thành công' }
   }
+
+  async deleteEmployee(id: number) {
+    const user = await this.userRepository.findOne({ where: { id } })
+    if (!user) throw new NotFoundException('Không tìm thấy nhân viên')
+
+    await this.userRepository.delete(id)
+
+    return { success: true, message: 'Xóa nhân viên thành công' }
+  }
 }

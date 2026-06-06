@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Param, Body,
+  Controller, Get, Post, Patch, Delete, Param, Body,
   UseGuards, Req, Query, UseInterceptors, UploadedFile,
 } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
@@ -110,5 +110,13 @@ export class UserController {
   @Get(':id')
   findEmployee(@Param('id') id: string) {
     return this.userService.findEmployee(parseInt(id))
+  }
+
+  // ── Admin: xóa nhân viên ──────────────────────────────────────────────────
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(1)
+  @Delete(':id')
+  deleteEmployee(@Param('id') id: string) {
+    return this.userService.deleteEmployee(parseInt(id))
   }
 }
