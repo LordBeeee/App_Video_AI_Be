@@ -10,6 +10,7 @@ import { UserService } from './user.service'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { RolesGuard } from '../auth/guards/roles.guard'
 import { Roles } from '../auth/decorators/roles.decorator'
+import { ChangePasswordDto } from './dto/change-password.dto'
 
 @Controller('users')
 export class UserController {
@@ -41,6 +42,25 @@ export class UserController {
       parseInt(month) || now.getMonth() + 1,
       parseInt(year) || now.getFullYear(),
     )
+  }
+
+  // ── Cập nhật profile của bản thân ─────────────────────────────────────────
+  @UseGuards(JwtAuthGuard)
+  @Patch('me')
+  @UseInterceptors(FileInterceptor('avatar', { storage: memoryStorage() }))
+  updateProfile(
+    @Req() req: any,
+    @Body() dto: UpdateEmployeeDto,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    return this.userService.updateProfile(req.user.id, dto, file?.buffer)
+  }
+
+  // ── Đổi mật khẩu của bản thân ─────────────────────────────────────────────
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/change-password')
+  changePassword(@Req() req: any, @Body() dto: ChangePasswordDto) {
+    return this.userService.changePassword(req.user.id, dto.currentPassword, dto.newPassword)
   }
 
   // ── Admin: thống kê nhân viên (đặt TRƯỚC :id để tránh conflict) ───────────
@@ -119,4 +139,5 @@ export class UserController {
   deleteEmployee(@Param('id') id: string) {
     return this.userService.deleteEmployee(parseInt(id))
   }
+  
 }

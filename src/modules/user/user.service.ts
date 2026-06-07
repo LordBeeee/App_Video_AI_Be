@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common'
+import { Injectable, NotFoundException, ConflictException, UnauthorizedException } from '@nestjs/common'
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm'
 import { DataSource, Repository } from 'typeorm'
 import { User } from './entities/user.entity'
@@ -316,5 +316,49 @@ export class UserService {
     await this.userRepository.delete(id)
 
     return { success: true, message: 'Xóa nhân viên thành công' }
+  }
+
+  // ─── Cập nhật profile của chính mình ────────────────────────────────────────
+  async updateProfile(userId: number, dto: UpdateEmployeeDto, avatarBuffer?: Buffer) {
+    const user = await this.userRepository.findOne({ where: { id: userId } })
+    if (!user) throw new NotFoundException('Không tìm thấy người dùng')
+
+    if (dto.username && dto.username !== user.username) {
+      const existing = await this.userRepository.findOne({ where: { username: dto.username } })
+      if (existing && existing.id !== userId)
+        throw new ConflictException('Username đã được sử dụng')
+    }
+
+    let avatarUrl = user.avatarUrl
+    if (avatarBuffer) {
+      const result = await this.cloudinaryService.uploadBuffer(
+        avatarBuffer, `avatar/users/${userId}`, 'avatar',
+      )
+      avatarUrl = result.secure_url
+    }
+
+    await this.userRepository.update(userId, {
+      fullName:  dto.fullName  ?? user.fullName,
+      username:  dto.username  ?? user.username,
+      phone:     dto.phone     ?? user.phone,
+      avatarUrl,
+      updatedAt: new Date(),
+    })
+
+    return this.findMe(userId)
+  }
+
+  // ─── Đổi mật khẩu của chính mình ────────────────────────────────────────────
+  async changePassword(userId: number, currentPassword: string, newPassword: string) {
+    const user = await this.userRepository.findOne({ where: { id: userId } })
+    if (!user) throw new NotFoundException('Không tìm thấy người dùng')
+
+    const isValid = await bcrypt.compare(currentPassword, user.passwordHash)
+    if (!isValid) throw new UnauthorizedException('Mật khẩu hiện tại không đúng')
+
+    const passwordHash = await bcrypt.hash(newPassword, 10)
+    await this.userRepository.update(userId, { passwordHash, updatedAt: new Date() })
+
+    return { success: true, message: 'Đổi mật khẩu thành công' }
   }
 }
