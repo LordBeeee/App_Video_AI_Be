@@ -86,44 +86,44 @@ export class UserService {
     const [promptRows, imageRows, videoRows] = await Promise.all([
       this.dataSource.query(
         `SELECT
-           EXTRACT(DAY FROM pg.created_at AT TIME ZONE $4)::int AS day,
-           COUNT(*)::int                                          AS cnt,
-           COALESCE(SUM(pg.cost), 0)::bigint                    AS cost
-         FROM prompt_generations pg
-         JOIN projects p ON p.id = pg.project_id
-         WHERE p.user_id = $1
-           AND pg.status = 'succeeded'
-           AND EXTRACT(MONTH FROM pg.created_at AT TIME ZONE $4) = $2
-           AND EXTRACT(YEAR  FROM pg.created_at AT TIME ZONE $4) = $3
-         GROUP BY 1`,
+          EXTRACT(DAY FROM pg.created_at AT TIME ZONE $4)::int AS day,
+          COUNT(*)::int                                          AS cnt,
+          COALESCE(SUM(pg.cost), 0)::bigint                    AS cost
+        FROM prompt_generations pg
+        JOIN projects p ON p.id = pg.project_id
+        WHERE p.user_id = $1
+          AND pg.status = 'succeeded'
+          AND EXTRACT(MONTH FROM pg.created_at AT TIME ZONE $4) = $2
+          AND EXTRACT(YEAR  FROM pg.created_at AT TIME ZONE $4) = $3
+        GROUP BY 1`,
         [userId, month, year, TZ],
       ),
       this.dataSource.query(
         `SELECT
-           EXTRACT(DAY FROM ig.created_at AT TIME ZONE $4)::int AS day,
-           COUNT(*)::int                                          AS cnt,
-           COALESCE(SUM(ig.cost), 0)::bigint                    AS cost
-         FROM image_generations ig
-         JOIN projects p ON p.id = ig.project_id
-         WHERE p.user_id = $1
-           AND ig.status = 'succeeded'
-           AND EXTRACT(MONTH FROM ig.created_at AT TIME ZONE $4) = $2
-           AND EXTRACT(YEAR  FROM ig.created_at AT TIME ZONE $4) = $3
-         GROUP BY 1`,
+          EXTRACT(DAY FROM ig.created_at AT TIME ZONE $4)::int AS day,
+          COUNT(*)::int                                          AS cnt,
+          COALESCE(SUM(ig.cost), 0)::bigint                    AS cost
+        FROM image_generations ig
+        JOIN projects p ON p.id = ig.project_id
+        WHERE p.user_id = $1
+          AND ig.status = 'succeeded'
+          AND EXTRACT(MONTH FROM ig.created_at AT TIME ZONE $4) = $2
+          AND EXTRACT(YEAR  FROM ig.created_at AT TIME ZONE $4) = $3
+        GROUP BY 1`,
         [userId, month, year, TZ],
       ),
       this.dataSource.query(
         `SELECT
-           EXTRACT(DAY FROM vg.created_at AT TIME ZONE $4)::int AS day,
-           COUNT(*)::int                                          AS cnt,
-           COALESCE(SUM(vg.cost), 0)::bigint                    AS cost
-         FROM video_generations vg
-         JOIN projects p ON p.id = vg.project_id
-         WHERE p.user_id = $1
-           AND vg.status = 'succeeded'
-           AND EXTRACT(MONTH FROM vg.created_at AT TIME ZONE $4) = $2
-           AND EXTRACT(YEAR  FROM vg.created_at AT TIME ZONE $4) = $3
-         GROUP BY 1`,
+          EXTRACT(DAY FROM vg.created_at AT TIME ZONE $4)::int AS day,
+          COUNT(*)::int                                          AS cnt,
+          COALESCE(SUM(vg.cost), 0)::bigint                    AS cost
+        FROM video_generations vg
+        JOIN projects p ON p.id = vg.project_id
+        WHERE p.user_id = $1
+          AND vg.status = 'succeeded'
+          AND EXTRACT(MONTH FROM vg.created_at AT TIME ZONE $4) = $2
+          AND EXTRACT(YEAR  FROM vg.created_at AT TIME ZONE $4) = $3
+        GROUP BY 1`,
         [userId, month, year, TZ],
       ),
     ])
@@ -144,6 +144,67 @@ export class UserService {
     for (let d = 1; d <= daysInMonth; d++) {
       generations.push({ day: d, prompt: pm[d]?.cnt ?? 0, images: im[d]?.cnt ?? 0, videos: vm[d]?.cnt ?? 0 })
       spending.push({ day: d, total: (pm[d]?.cost ?? 0) + (im[d]?.cost ?? 0) + (vm[d]?.cost ?? 0) })
+    }
+
+    return { generations, spending }
+  }
+
+  // ─── MỚI: Thống kê toàn hệ thống (admin) ────────────────────────────────────
+  async getSystemStats() {
+    const rows = await this.dataSource.query(
+      `SELECT
+        COALESCE(SUM(total_prompts), 0) AS total_prompts,
+        COALESCE(SUM(total_images), 0)  AS total_images,
+        COALESCE(SUM(total_videos), 0)  AS total_videos,
+        COALESCE(SUM(total_cost), 0)    AS total_cost
+      FROM v_user_stats`,
+    )
+
+    const row = rows[0] ?? {
+      total_prompts: 0,
+      total_images:  0,
+      total_videos:  0,
+      total_cost:    0,
+    }
+
+    return {
+      totalPrompts: Number(row.total_prompts),
+      totalImages:  Number(row.total_images),
+      totalVideos:  Number(row.total_videos),
+      totalCost:    Number(row.total_cost),
+    }
+  }
+
+  async getSystemDailyStats(month: number, year: number) {
+    const daysInMonth = new Date(year, month, 0).getDate()
+
+    const rows = await this.dataSource.query(
+      `SELECT day, task_type, cnt, cost
+       FROM v_system_daily_stats
+       WHERE EXTRACT(MONTH FROM day) = $1
+         AND EXTRACT(YEAR  FROM day) = $2`,
+      [month, year],
+    )
+
+    type DayEntry = { cnt: number; cost: number }
+    const map: Record<number, Record<string, DayEntry>> = {}
+
+    for (const r of rows) {
+      const d = new Date(r.day).getDate()
+      map[d] ??= {}
+      map[d][r.task_type] = { cnt: Number(r.cnt), cost: Number(r.cost) }
+    }
+
+    const generations: { day: number; prompt: number; images: number; videos: number }[] = []
+    const spending:    { day: number; total: number }[] = []
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const p = map[d]?.prompt ?? { cnt: 0, cost: 0 }
+      const i = map[d]?.image  ?? { cnt: 0, cost: 0 }
+      const v = map[d]?.video  ?? { cnt: 0, cost: 0 }
+
+      generations.push({ day: d, prompt: p.cnt, images: i.cnt, videos: v.cnt })
+      spending.push({ day: d, total: p.cost + i.cost + v.cost })
     }
 
     return { generations, spending }

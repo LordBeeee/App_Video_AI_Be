@@ -71,6 +71,28 @@ export class UserController {
     return this.userService.getEmployeeStats()
   }
 
+  // ── Admin: thống kê toàn hệ thống ─────────────────────────────────────────
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(1)
+  @Get('system-stats')
+  getSystemStats() {
+    return this.userService.getSystemStats()
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(1)
+  @Get('system-daily-stats')
+  getSystemDailyStats(
+    @Query('month') month: string,
+    @Query('year') year: string,
+  ) {
+    const now = new Date()
+    return this.userService.getSystemDailyStats(
+      parseInt(month) || now.getMonth() + 1,
+      parseInt(year) || now.getFullYear(),
+    )
+  }
+
   // ── Admin: danh sách nhân viên ────────────────────────────────────────────
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(1)
