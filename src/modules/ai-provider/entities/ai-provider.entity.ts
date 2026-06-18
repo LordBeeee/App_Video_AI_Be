@@ -15,15 +15,6 @@ export class AiProvider {
   @Column({ type: 'text', nullable: true })
   description!: string;
 
-  @Column({ name: 'provider_type', length: 50, nullable: true })
-  providerType!: string;
-
-  @Column({ name: 'base_url', type: 'text', nullable: true })
-  baseUrl!: string;
-
-  @Column({ name: 'provider_config', type: 'jsonb', nullable: true })
-  providerConfig!: object;
-
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
 

@@ -24,18 +24,6 @@ export class AiModel {
   @Column({ type: 'text', nullable: true })
   description!: string;
 
-  @Column({ name: 'input_schema', type: 'jsonb', nullable: true })
-  inputSchema!: object;
-
-  @Column({ name: 'output_schema', type: 'jsonb', nullable: true })
-  outputSchema!: object;
-
-  @Column({ name: 'default_params', type: 'jsonb', nullable: true })
-  defaultParams!: object;
-
-  @Column({ type: 'jsonb', nullable: true })
-  pricing!: object;
-
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
 
