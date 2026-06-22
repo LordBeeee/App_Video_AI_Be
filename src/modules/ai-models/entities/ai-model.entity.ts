@@ -24,6 +24,9 @@ export class AiModel {
   @Column({ type: 'text', nullable: true })
   description!: string;
 
+  @Column({ name: 'supports_motion_control', type: 'boolean', default: false })
+  supportsMotionControl!: boolean;
+
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
 

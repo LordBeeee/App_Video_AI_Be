@@ -10,7 +10,14 @@ export class AiModelsController {
   findAll(
     @Query('providerCode') providerCode?: string,
     @Query('modelType') modelType?: string,
+    @Query('supportsMotionControl') supportsMotionControl?: string,
   ) {
+    
+    // chuyển string 'true'/'false' → boolean | undefined
+    const smc = supportsMotionControl !== undefined
+      ? supportsMotionControl === 'true'
+      : undefined;
+
     return this.aiModelsService.findAll(providerCode, modelType);
   }
 

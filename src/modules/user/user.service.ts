@@ -58,9 +58,17 @@ export class UserService {
 
   async getStats(userId: number) {
     const rows = await this.dataSource.query(
-      `SELECT total_prompts, total_images, total_videos, total_cost
-       FROM v_user_stats
-       WHERE user_id = $1`,
+      // `SELECT total_prompts, total_images, total_videos, total_cost
+      //  FROM v_user_stats
+      //  WHERE user_id = $1`,
+      // [userId],
+      `SELECT
+        total_prompts,
+        total_images,
+        (total_videos + total_motions) AS total_videos,
+        total_cost
+      FROM v_user_stats
+      WHERE user_id = $1`,
       [userId],
     )
 
@@ -79,11 +87,80 @@ export class UserService {
     }
   }
 
+  // async getDailyStats(userId: number, month: number, year: number) {
+  //   const daysInMonth = new Date(year, month, 0).getDate()
+  //   const TZ = 'Asia/Ho_Chi_Minh'
+
+  //   const [promptRows, imageRows, videoRows] = await Promise.all([
+  //     this.dataSource.query(
+  //       `SELECT
+  //         EXTRACT(DAY FROM pg.created_at AT TIME ZONE $4)::int AS day,
+  //         COUNT(*)::int                                          AS cnt,
+  //         COALESCE(SUM(pg.cost), 0)::bigint                    AS cost
+  //       FROM prompt_generations pg
+  //       JOIN projects p ON p.id = pg.project_id
+  //       WHERE p.user_id = $1
+  //         AND pg.status = 'succeeded'
+  //         AND EXTRACT(MONTH FROM pg.created_at AT TIME ZONE $4) = $2
+  //         AND EXTRACT(YEAR  FROM pg.created_at AT TIME ZONE $4) = $3
+  //       GROUP BY 1`,
+  //       [userId, month, year, TZ],
+  //     ),
+  //     this.dataSource.query(
+  //       `SELECT
+  //         EXTRACT(DAY FROM ig.created_at AT TIME ZONE $4)::int AS day,
+  //         COUNT(*)::int                                          AS cnt,
+  //         COALESCE(SUM(ig.cost), 0)::bigint                    AS cost
+  //       FROM image_generations ig
+  //       JOIN projects p ON p.id = ig.project_id
+  //       WHERE p.user_id = $1
+  //         AND ig.status = 'succeeded'
+  //         AND EXTRACT(MONTH FROM ig.created_at AT TIME ZONE $4) = $2
+  //         AND EXTRACT(YEAR  FROM ig.created_at AT TIME ZONE $4) = $3
+  //       GROUP BY 1`,
+  //       [userId, month, year, TZ],
+  //     ),
+  //     this.dataSource.query(
+  //       `SELECT
+  //         EXTRACT(DAY FROM vg.created_at AT TIME ZONE $4)::int AS day,
+  //         COUNT(*)::int                                          AS cnt,
+  //         COALESCE(SUM(vg.cost), 0)::bigint                    AS cost
+  //       FROM video_generations vg
+  //       JOIN projects p ON p.id = vg.project_id
+  //       WHERE p.user_id = $1
+  //         AND vg.status = 'succeeded'
+  //         AND EXTRACT(MONTH FROM vg.created_at AT TIME ZONE $4) = $2
+  //         AND EXTRACT(YEAR  FROM vg.created_at AT TIME ZONE $4) = $3
+  //       GROUP BY 1`,
+  //       [userId, month, year, TZ],
+  //     ),
+  //   ])
+
+  //   type DayEntry = { cnt: number; cost: number }
+  //   const toMap = (rows: any[]): Record<number, DayEntry> =>
+  //     Object.fromEntries(
+  //       rows.map((r) => [r.day, { cnt: Number(r.cnt), cost: Number(r.cost) }]),
+  //     )
+
+  //   const pm = toMap(promptRows)
+  //   const im = toMap(imageRows)
+  //   const vm = toMap(videoRows)
+
+  //   const generations: { day: number; prompt: number; images: number; videos: number }[] = []
+  //   const spending:    { day: number; total: number }[] = []
+
+  //   for (let d = 1; d <= daysInMonth; d++) {
+  //     generations.push({ day: d, prompt: pm[d]?.cnt ?? 0, images: im[d]?.cnt ?? 0, videos: vm[d]?.cnt ?? 0 })
+  //     spending.push({ day: d, total: (pm[d]?.cost ?? 0) + (im[d]?.cost ?? 0) + (vm[d]?.cost ?? 0) })
+  //   }
+
+  //   return { generations, spending }
+  // }
   async getDailyStats(userId: number, month: number, year: number) {
     const daysInMonth = new Date(year, month, 0).getDate()
     const TZ = 'Asia/Ho_Chi_Minh'
-
-    const [promptRows, imageRows, videoRows] = await Promise.all([
+ 
+    const [promptRows, imageRows, videoRows, motionRows] = await Promise.all([
       this.dataSource.query(
         `SELECT
           EXTRACT(DAY FROM pg.created_at AT TIME ZONE $4)::int AS day,
@@ -126,26 +203,54 @@ export class UserService {
         GROUP BY 1`,
         [userId, month, year, TZ],
       ),
+      // ← THÊM: query motion_generations
+      this.dataSource.query(
+        `SELECT
+          EXTRACT(DAY FROM mg.created_at AT TIME ZONE $4)::int AS day,
+          COUNT(*)::int                                          AS cnt,
+          COALESCE(SUM(mg.cost), 0)::bigint                    AS cost
+        FROM motion_generations mg
+        JOIN projects p ON p.id = mg.project_id
+        WHERE p.user_id = $1
+          AND mg.status = 'succeeded'
+          AND EXTRACT(MONTH FROM mg.created_at AT TIME ZONE $4) = $2
+          AND EXTRACT(YEAR  FROM mg.created_at AT TIME ZONE $4) = $3
+        GROUP BY 1`,
+        [userId, month, year, TZ],
+      ),
     ])
-
+ 
     type DayEntry = { cnt: number; cost: number }
     const toMap = (rows: any[]): Record<number, DayEntry> =>
       Object.fromEntries(
         rows.map((r) => [r.day, { cnt: Number(r.cnt), cost: Number(r.cost) }]),
       )
-
+ 
     const pm = toMap(promptRows)
     const im = toMap(imageRows)
     const vm = toMap(videoRows)
-
+    const mm = toMap(motionRows) // ← THÊM
+ 
     const generations: { day: number; prompt: number; images: number; videos: number }[] = []
     const spending:    { day: number; total: number }[] = []
-
+ 
     for (let d = 1; d <= daysInMonth; d++) {
-      generations.push({ day: d, prompt: pm[d]?.cnt ?? 0, images: im[d]?.cnt ?? 0, videos: vm[d]?.cnt ?? 0 })
-      spending.push({ day: d, total: (pm[d]?.cost ?? 0) + (im[d]?.cost ?? 0) + (vm[d]?.cost ?? 0) })
+      // ← video = video_generations + motion_generations
+      const videoCnt  = (vm[d]?.cnt  ?? 0) + (mm[d]?.cnt  ?? 0)
+      const videoCost = (vm[d]?.cost ?? 0) + (mm[d]?.cost ?? 0)
+ 
+      generations.push({
+        day:    d,
+        prompt: pm[d]?.cnt ?? 0,
+        images: im[d]?.cnt ?? 0,
+        videos: videoCnt,
+      })
+      spending.push({
+        day:   d,
+        total: (pm[d]?.cost ?? 0) + (im[d]?.cost ?? 0) + videoCost,
+      })
     }
-
+ 
     return { generations, spending }
   }
 
@@ -175,38 +280,102 @@ export class UserService {
     }
   }
 
+  // async getSystemDailyStats(month: number, year: number) {
+  //   const daysInMonth = new Date(year, month, 0).getDate()
+
+  //   const rows = await this.dataSource.query(
+  //     `SELECT day, task_type, cnt, cost
+  //      FROM v_system_daily_stats
+  //      WHERE EXTRACT(MONTH FROM day) = $1
+  //        AND EXTRACT(YEAR  FROM day) = $2`,
+  //     [month, year],
+  //   )
+
+  //   type DayEntry = { cnt: number; cost: number }
+  //   const map: Record<number, Record<string, DayEntry>> = {}
+
+  //   for (const r of rows) {
+  //     const d = new Date(r.day).getDate()
+  //     map[d] ??= {}
+  //     map[d][r.task_type] = { cnt: Number(r.cnt), cost: Number(r.cost) }
+  //   }
+
+  //   const generations: { day: number; prompt: number; images: number; videos: number }[] = []
+  //   const spending:    { day: number; total: number }[] = []
+
+  //   for (let d = 1; d <= daysInMonth; d++) {
+  //     const p = map[d]?.prompt ?? { cnt: 0, cost: 0 }
+  //     const i = map[d]?.image  ?? { cnt: 0, cost: 0 }
+  //     const v = map[d]?.video  ?? { cnt: 0, cost: 0 }
+
+  //     generations.push({ day: d, prompt: p.cnt, images: i.cnt, videos: v.cnt })
+  //     spending.push({ day: d, total: p.cost + i.cost + v.cost })
+  //   }
+
+  //   return { generations, spending }
+  // }
+  
   async getSystemDailyStats(month: number, year: number) {
     const daysInMonth = new Date(year, month, 0).getDate()
-
-    const rows = await this.dataSource.query(
-      `SELECT day, task_type, cnt, cost
-       FROM v_system_daily_stats
-       WHERE EXTRACT(MONTH FROM day) = $1
-         AND EXTRACT(YEAR  FROM day) = $2`,
-      [month, year],
-    )
-
+    const TZ = 'Asia/Ho_Chi_Minh'
+ 
+    // v_system_daily_stats chưa có motion_generations → query riêng song song
+    const [viewRows, motionRows] = await Promise.all([
+      this.dataSource.query(
+        `SELECT day, task_type, cnt, cost
+         FROM v_system_daily_stats
+         WHERE EXTRACT(MONTH FROM day) = $1
+           AND EXTRACT(YEAR  FROM day) = $2`,
+        [month, year],
+      ),
+      // ← THÊM: query motion_generations toàn hệ thống
+      this.dataSource.query(
+        `SELECT
+          (mg.created_at AT TIME ZONE $3)::date          AS day,
+          COUNT(*)::int                                   AS cnt,
+          COALESCE(SUM(mg.cost), 0)::bigint              AS cost
+        FROM motion_generations mg
+        WHERE mg.status = 'succeeded'
+          AND EXTRACT(MONTH FROM mg.created_at AT TIME ZONE $3) = $1
+          AND EXTRACT(YEAR  FROM mg.created_at AT TIME ZONE $3) = $2
+        GROUP BY 1`,
+        [month, year, TZ],
+      ),
+    ])
+ 
     type DayEntry = { cnt: number; cost: number }
     const map: Record<number, Record<string, DayEntry>> = {}
-
-    for (const r of rows) {
+ 
+    // Đổ dữ liệu từ view (prompt, image, video)
+    for (const r of viewRows) {
       const d = new Date(r.day).getDate()
       map[d] ??= {}
       map[d][r.task_type] = { cnt: Number(r.cnt), cost: Number(r.cost) }
     }
-
+ 
+    // Merge motion vào bucket 'video'
+    for (const r of motionRows) {
+      const d = new Date(r.day).getDate()
+      map[d] ??= {}
+      const existing = map[d]['video'] ?? { cnt: 0, cost: 0 }
+      map[d]['video'] = {
+        cnt:  existing.cnt  + Number(r.cnt),
+        cost: existing.cost + Number(r.cost),
+      }
+    }
+ 
     const generations: { day: number; prompt: number; images: number; videos: number }[] = []
     const spending:    { day: number; total: number }[] = []
-
+ 
     for (let d = 1; d <= daysInMonth; d++) {
       const p = map[d]?.prompt ?? { cnt: 0, cost: 0 }
       const i = map[d]?.image  ?? { cnt: 0, cost: 0 }
       const v = map[d]?.video  ?? { cnt: 0, cost: 0 }
-
+ 
       generations.push({ day: d, prompt: p.cnt, images: i.cnt, videos: v.cnt })
       spending.push({ day: d, total: p.cost + i.cost + v.cost })
     }
-
+ 
     return { generations, spending }
   }
 

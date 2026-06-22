@@ -6,10 +6,11 @@ import { VideoGenerationsService } from './video-generations.service';
 import { VideoGenerationsController } from './video-generations.controller';
 import { AiModelsModule } from '../ai-models/ai-models.module';
 import { Project } from '../projects/entities/project.entity';
+import { MotionGeneration } from './entities/motion-generation.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([VideoGeneration, Asset, Project]),
+    TypeOrmModule.forFeature([VideoGeneration,MotionGeneration , Asset, Project]),
     AiModelsModule,
   ],
   controllers: [VideoGenerationsController],

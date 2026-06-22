@@ -11,7 +11,7 @@ export class AiModelsService {
   ) {}
 
   // Lấy tất cả models (có thể filter theo provider code và model_type)
-  async findAll(providerCode?: string, modelType?: string): Promise<AiModel[]> {
+  async findAll(providerCode?: string, modelType?: string, supportsMotionControl?: boolean): Promise<AiModel[]> {
     const query = this.aiModelRepository
       .createQueryBuilder('model')
       .leftJoinAndSelect('model.provider', 'provider')
@@ -23,6 +23,13 @@ export class AiModelsService {
 
     if (modelType) {
       query.andWhere('model.model_type = :modelType', { modelType });
+    }
+
+    if (supportsMotionControl !== undefined) {           // ← thêm
+      query.andWhere(
+        'model.supports_motion_control = :smc',
+        { smc: supportsMotionControl },
+      );
     }
 
     return query.orderBy('model.name', 'ASC').getMany();
