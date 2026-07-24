@@ -23,6 +23,9 @@ export class CreateVideoDto {
   shotType?: 'customize' | 'intelligence';
   // Chỉ dùng khi shotType = 'customize' (1–6 items)
   multiPrompt?: MultiPromptItem[];
+
+  startImageAssetId?: number;
+  endImageAssetId?: number;
 }
 
 export class CreateMotionControlVideoDto {
