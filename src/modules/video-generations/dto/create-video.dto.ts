@@ -44,4 +44,7 @@ export class CreateMotionControlVideoDto {
 
   sceneNumber?: number;
   cost?: number;
+
+  characterImageAssetId?: number;
+  referenceVideoAssetId?: number;
 }

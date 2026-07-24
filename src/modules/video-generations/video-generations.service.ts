@@ -1099,8 +1099,8 @@ export class VideoGenerationsService {
     assetId: number | undefined,
     file: Express.Multer.File | undefined,
     baseFolder: string,
-    role: 'begin' | 'end',
-    assetRole: 'image_begin' | 'image_end',
+    role: string,
+    assetRole: string,
   ): Promise<Asset | null> {
     if (assetId) {
       const asset = await this.assetRepo.findOne({ where: { id: assetId } });
@@ -1285,8 +1285,8 @@ export class VideoGenerationsService {
   async createMotionControlVideo(
     userId: number,
     dto: CreateMotionControlVideoDto,
-    characterImageFile: Express.Multer.File,
-    referenceVideoFile: Express.Multer.File,
+    characterImageFile?: Express.Multer.File,
+    referenceVideoFile?: Express.Multer.File,
   ) {
     const model = await this.aiModelsService.findOne(dto.modelId);
     if (!model) throw new BadRequestException('Model không tồn tại');
@@ -1308,48 +1308,60 @@ export class VideoGenerationsService {
     const sceneNumber = dto.sceneNumber ?? 1;
     const baseFolder = `ai-generation/users/${userId}/projects/${projectId}/scenes/scene-${sceneNumber}`;
 
-    this.logger.log('[MotionControl] Uploading character image...');
-    const imageUpload = await this.cloudinaryService.uploadBuffer(
-      characterImageFile.buffer,
-      `${baseFolder}/images/character`,
-      `character_${Date.now()}`,
+    // ── Resolve character image (reuse asset có sẵn hoặc upload mới) ────────
+    const characterAsset = await this.resolveImageAsset(
+      userId,
+      dto.characterImageAssetId,
+      characterImageFile,
+      `${baseFolder}/images`,
+      'character',
+      'image_begin',
     );
+    if (!characterAsset) {
+      throw new BadRequestException('Cần cung cấp characterImage hoặc characterImageAssetId');
+    }
+    if (!characterAsset.projectId) {
+      characterAsset.projectId = projectId;
+      await this.assetRepo.save(characterAsset);
+    }
 
-    const characterAsset = await this.assetRepo.save(
-      this.assetRepo.create({
-        userId,
-        projectId,
-        assetType: 'image',
-        assetRole: 'image_begin',
-        sourceType: 'uploaded',
-        originalUrl: imageUpload.secure_url,
-        storedUrl:   imageUpload.secure_url,
-        storageProvider: 'cloudinary',
-        mimeType:    characterImageFile.mimetype,
-        fileSizeBytes: characterImageFile.size,
-        metadata: {
-          cloudinary_public_id: imageUpload.public_id,
-          width:  imageUpload.width,
-          height: imageUpload.height,
-        },
-      }),
-    );
+    // ── Resolve reference video (reuse asset có sẵn hoặc tạo placeholder để upload nền) ──
+    let referenceVideoAsset: Asset;
+    let needBackgroundUpload = false;
 
-    const referenceVideoAsset = await this.assetRepo.save(
-      this.assetRepo.create({
-        userId,
-        projectId,
-        assetType: 'video',
-        assetRole: 'scene_video',
-        sourceType: 'uploaded',
-        originalUrl: '',
-        storedUrl:   '',
-        storageProvider: 'cloudinary',
-        mimeType:    referenceVideoFile.mimetype,
-        fileSizeBytes: referenceVideoFile.size,
-        metadata: {},
-      }),
-    );
+    if (dto.referenceVideoAssetId) {
+      const existing = await this.assetRepo.findOne({ where: { id: dto.referenceVideoAssetId } });
+      if (!existing) {
+        throw new BadRequestException(`Không tìm thấy reference video đã chọn (id=${dto.referenceVideoAssetId})`);
+      }
+      if (Number(existing.userId) !== Number(userId)) {
+        throw new BadRequestException('Không có quyền dùng video này');
+      }
+      referenceVideoAsset = existing;
+      if (!referenceVideoAsset.projectId) {
+        referenceVideoAsset.projectId = projectId;
+        await this.assetRepo.save(referenceVideoAsset);
+      }
+    } else if (referenceVideoFile) {
+      referenceVideoAsset = await this.assetRepo.save(
+        this.assetRepo.create({
+          userId,
+          projectId,
+          assetType: 'video',
+          assetRole: 'scene_video',
+          sourceType: 'uploaded',
+          originalUrl: '',
+          storedUrl: '',
+          storageProvider: 'cloudinary',
+          mimeType: referenceVideoFile.mimetype,
+          fileSizeBytes: referenceVideoFile.size,
+          metadata: {},
+        }),
+      );
+      needBackgroundUpload = true;
+    } else {
+      throw new BadRequestException('Cần cung cấp referenceVideo hoặc referenceVideoAssetId');
+    }
 
     // ── Dùng motionGenerationRepo thay vì videoGenerationRepo ──
     const motionGen = await this.motionGenerationRepo.save(
@@ -1376,7 +1388,7 @@ export class VideoGenerationsService {
 
     this.runMotionControlInBackground({
       motionGen,
-      referenceVideoFile,
+      referenceVideoFile: needBackgroundUpload ? referenceVideoFile : undefined,
       characterAsset,
       referenceVideoAsset,
       dto,
@@ -1394,6 +1406,7 @@ export class VideoGenerationsService {
       projectId,
       status: 'queued',
       characterImageUrl: characterAsset.storedUrl,
+      referenceVideoUrl: referenceVideoAsset.storedUrl || null,
       promptSent: dto.prompt || '',
       modelName: model.name,
       generationMode: dto.mode || 'pro',
@@ -1597,18 +1610,24 @@ export class VideoGenerationsService {
     model,
   }: any) {
     try {
-      this.logger.log('[MotionControl] [BG] Uploading reference video...');
-      const videoUpload = await this.cloudinaryService.uploadVideoBuffer(
-        referenceVideoFile.buffer,
-        `${baseFolder}/videos/reference`,
-        `ref_${Date.now()}`,
-      );
+      let videoUrlForKling = referenceVideoAsset.storedUrl;
 
-      await this.assetRepo.update(referenceVideoAsset.id, {
-        originalUrl: videoUpload.secure_url,
-        storedUrl:   videoUpload.secure_url,
-        metadata: { cloudinary_public_id: videoUpload.public_id },
-      });
+      if (referenceVideoFile) {
+        this.logger.log('[MotionControl] [BG] Uploading reference video...');
+        const videoUpload = await this.cloudinaryService.uploadVideoBuffer(
+          referenceVideoFile.buffer,
+          `${baseFolder}/videos/reference`,
+          `ref_${Date.now()}`,
+        );
+
+        await this.assetRepo.update(referenceVideoAsset.id, {
+          originalUrl: videoUpload.secure_url,
+          storedUrl:   videoUpload.secure_url,
+          metadata: { cloudinary_public_id: videoUpload.public_id },
+        });
+
+        videoUrlForKling = videoUpload.secure_url;
+      }
 
       const klingModelName = model.code;
       this.logger.log(`[MotionControl] [BG] Calling Kling: ${klingModelName}`);
@@ -1616,7 +1635,7 @@ export class VideoGenerationsService {
       const klingCreate = await this.klingService.createMotionControl({
         modelName:            klingModelName,
         imageUrl:             characterAsset.storedUrl,
-        videoUrl:             videoUpload.secure_url,
+        videoUrl:             videoUrlForKling,
         prompt:               dto.prompt || '',
         keepOriginalSound:    dto.keepOriginalSound ?? 'yes',
         characterOrientation: dto.characterOrientation,

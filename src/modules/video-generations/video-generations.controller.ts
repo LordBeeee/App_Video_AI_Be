@@ -267,6 +267,39 @@ export class VideoGenerationsController {
       { storage: memoryStorage() },
     ),
   )
+  // async createMotionControlVideo(
+  //   @Req() req: any,
+  //   @Body() body: any,
+  //   @UploadedFiles()
+  //   files: {
+  //     characterImage?: Express.Multer.File[];
+  //     referenceVideo?: Express.Multer.File[];
+  //   },
+  // ) {
+  //   const characterImage = files?.characterImage?.[0];
+  //   const referenceVideo = files?.referenceVideo?.[0];
+
+  //   if (!characterImage) throw new BadRequestException('Character image là bắt buộc');
+  //   if (!referenceVideo) throw new BadRequestException('Reference video là bắt buộc');
+
+  //   const dto: CreateMotionControlVideoDto = {
+  //     modelId:              Number(body.modelId),
+  //     prompt:               body.prompt,
+  //     negativePrompt:       body.negativePrompt,
+  //     characterOrientation: body.characterOrientation || 'image',
+  //     keepOriginalSound:    (body.keepOriginalSound as 'yes' | 'no') ?? 'yes',
+  //     mode:                 body.mode || 'pro',
+  //     sceneNumber:          body.sceneNumber ? Number(body.sceneNumber) : 1,
+  //     cost:                 body.cost ? Math.round(Number(body.cost)) : 0,
+  //   };
+
+  //   return this.videoGenerationsService.createMotionControlVideo(
+  //     req.user.id,
+  //     dto,
+  //     characterImage,
+  //     referenceVideo,
+  //   );
+  // }
   async createMotionControlVideo(
     @Req() req: any,
     @Body() body: any,
@@ -279,8 +312,15 @@ export class VideoGenerationsController {
     const characterImage = files?.characterImage?.[0];
     const referenceVideo = files?.referenceVideo?.[0];
 
-    if (!characterImage) throw new BadRequestException('Character image là bắt buộc');
-    if (!referenceVideo) throw new BadRequestException('Reference video là bắt buộc');
+    const characterImageAssetId = body.characterImageAssetId ? Number(body.characterImageAssetId) : undefined;
+    const referenceVideoAssetId = body.referenceVideoAssetId ? Number(body.referenceVideoAssetId) : undefined;
+
+    if (!characterImage && !characterImageAssetId) {
+      throw new BadRequestException('Character image là bắt buộc (file hoặc characterImageAssetId)');
+    }
+    if (!referenceVideo && !referenceVideoAssetId) {
+      throw new BadRequestException('Reference video là bắt buộc (file hoặc referenceVideoAssetId)');
+    }
 
     const dto: CreateMotionControlVideoDto = {
       modelId:              Number(body.modelId),
@@ -291,6 +331,8 @@ export class VideoGenerationsController {
       mode:                 body.mode || 'pro',
       sceneNumber:          body.sceneNumber ? Number(body.sceneNumber) : 1,
       cost:                 body.cost ? Math.round(Number(body.cost)) : 0,
+      characterImageAssetId,
+      referenceVideoAssetId,
     };
 
     return this.videoGenerationsService.createMotionControlVideo(
@@ -300,7 +342,7 @@ export class VideoGenerationsController {
       referenceVideo,
     );
   }
-
+  
   @Get('task/:taskId/status')
   getTaskStatus(@Param('taskId') taskId: string) {
     return this.videoGenerationsService.getTaskStatus(taskId);
