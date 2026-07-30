@@ -58,6 +58,7 @@ import { KlingModule } from './common/kling/kling.module';
 import { VideoGenerationsModule } from './modules/video-generations/video-generations.module';
 import { BytePlusModule } from './common/byteplus/byteplus.module';
 import { AssetsModule } from './modules/assets/assets.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),

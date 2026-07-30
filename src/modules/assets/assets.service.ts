@@ -76,7 +76,8 @@ export class AssetsService {
     let fps: number | undefined;
     let width: number | undefined;
     let height: number | undefined;
-
+    let thumbnailUrl: string | undefined;
+    
     if (isVideo) {
       const result = await this.cloudinaryService.uploadVideoBuffer(file.buffer, folder, publicId);
       storedUrl = result.secure_url;
@@ -84,6 +85,7 @@ export class AssetsService {
       fps = result.frame_rate ? Math.round(result.frame_rate) : undefined;
       width = result.width;
       height = result.height;
+      thumbnailUrl = result.thumbnail_url;
     } else {
       const result = await this.cloudinaryService.uploadBuffer(file.buffer, folder, publicId);
       storedUrl = result.secure_url;
@@ -106,6 +108,7 @@ export class AssetsService {
       fps,
       width,
       height,
+      thumbnailUrl,
       metadata: {},
     });
 

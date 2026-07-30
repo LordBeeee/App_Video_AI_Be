@@ -66,9 +66,16 @@ export class CloudinaryService {
   //   buffer: Buffer,
   //   folder: string,
   //   publicId: string,
-  // ): Promise<{ secure_url: string; public_id: string }> {
+  // ): Promise<{
+  //   secure_url: string;
+  //   public_id: string;
+  //   duration?: number;
+  //   width?: number;
+  //   height?: number;
+  //   frame_rate?: number;
+  // }> {
   //   return new Promise((resolve, reject) => {
-  //     const uploadStream = cloudinary.uploader.upload_stream(  // ← bỏ this.
+  //     const uploadStream = cloudinary.uploader.upload_stream(
   //       {
   //         folder,
   //         public_id: publicId,
@@ -76,14 +83,20 @@ export class CloudinaryService {
   //       },
   //       (error, result) => {
   //         if (error) return reject(error);
-  //         resolve({ secure_url: result!.secure_url, public_id: result!.public_id });
+  //         resolve({
+  //           secure_url: result!.secure_url,
+  //           public_id: result!.public_id,
+  //           duration: result!.duration,
+  //           width: result!.width,
+  //           height: result!.height,
+  //           frame_rate: (result as any)!.frame_rate,
+  //         });
   //       },
   //     );
 
-  //     streamifier.createReadStream(buffer).pipe(uploadStream);  // ← dùng streamifier như uploadBuffer
+  //     streamifier.createReadStream(buffer).pipe(uploadStream);
   //   });
   // }
-
   async uploadVideoBuffer(
     buffer: Buffer,
     folder: string,
@@ -95,6 +108,7 @@ export class CloudinaryService {
     width?: number;
     height?: number;
     frame_rate?: number;
+    thumbnail_url: string;
   }> {
     return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
@@ -105,6 +119,13 @@ export class CloudinaryService {
         },
         (error, result) => {
           if (error) return reject(error);
+
+          const thumbnailUrl = cloudinary.url(result!.public_id, {
+            resource_type: 'video',
+            format: 'jpg',
+            transformation: [{ start_offset: '0' }], // frame tại giây 0
+          });
+
           resolve({
             secure_url: result!.secure_url,
             public_id: result!.public_id,
@@ -112,20 +133,12 @@ export class CloudinaryService {
             width: result!.width,
             height: result!.height,
             frame_rate: (result as any)!.frame_rate,
+            thumbnail_url: thumbnailUrl,
           });
         },
       );
 
       streamifier.createReadStream(buffer).pipe(uploadStream);
     });
-  }
-
-  async destroy(publicId: string, resourceType: 'image' | 'video' = 'image'): Promise<void> {
-    try {
-      await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
-    } catch (error) {
-      // Không throw để không chặn luồng xóa Element nếu file đã không còn tồn tại trên Cloudinary
-      console.error(`[Cloudinary] destroy failed for ${publicId}:`, error);
-    }
   }
 }
