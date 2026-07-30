@@ -48,6 +48,15 @@ export class Asset {
   @Column({ name: 'duration_seconds', type: 'int', nullable: true })
   durationSeconds!: number | null;
 
+    @Column({ type: 'int', nullable: true })
+  fps!: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  width!: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  height!: number | null;
+
   @Column({ name: 'is_favorite', type: 'boolean', default: false })
   isFavorite!: boolean;
 

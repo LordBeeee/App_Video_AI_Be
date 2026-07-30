@@ -26,6 +26,41 @@ export class AssetsService {
     private readonly cloudinaryService: CloudinaryService,
   ) {}
 
+  // async uploadToLibrary(userId: number, file: Express.Multer.File) {
+  //   const isVideo = file.mimetype.startsWith('video/');
+  //   const isImage = file.mimetype.startsWith('image/');
+  //   if (!isVideo && !isImage) {
+  //     throw new BadRequestException('Chỉ hỗ trợ upload ảnh hoặc video');
+  //   }
+
+  //   const folder = `ai-generation/users/${userId}/library/${isVideo ? 'videos' : 'images'}`;
+  //   const publicId = `${isVideo ? 'video' : 'image'}_${Date.now()}`;
+
+  //   let storedUrl: string;
+  //   if (isVideo) {
+  //     const result = await this.cloudinaryService.uploadVideoBuffer(file.buffer, folder, publicId);
+  //     storedUrl = result.secure_url;
+  //   } else {
+  //     const result = await this.cloudinaryService.uploadBuffer(file.buffer, folder, publicId);
+  //     storedUrl = result.secure_url;
+  //   }
+
+  //   const asset = this.assetRepo.create({
+  //     userId,
+  //     projectId: null,
+  //     sceneId: null,
+  //     assetType: isVideo ? 'video' : 'image',
+  //     sourceType: 'uploaded',
+  //     storedUrl,
+  //     originalUrl: storedUrl,
+  //     storageProvider: 'cloudinary',
+  //     mimeType: file.mimetype,
+  //     fileSizeBytes: file.size,
+  //     metadata: {},
+  //   });
+
+  //   return this.assetRepo.save(asset);
+  // }
   async uploadToLibrary(userId: number, file: Express.Multer.File) {
     const isVideo = file.mimetype.startsWith('video/');
     const isImage = file.mimetype.startsWith('image/');
@@ -37,12 +72,23 @@ export class AssetsService {
     const publicId = `${isVideo ? 'video' : 'image'}_${Date.now()}`;
 
     let storedUrl: string;
+    let durationSeconds: number | undefined;
+    let fps: number | undefined;
+    let width: number | undefined;
+    let height: number | undefined;
+
     if (isVideo) {
       const result = await this.cloudinaryService.uploadVideoBuffer(file.buffer, folder, publicId);
       storedUrl = result.secure_url;
+      durationSeconds = result.duration ? Math.round(result.duration) : undefined;
+      fps = result.frame_rate ? Math.round(result.frame_rate) : undefined;
+      width = result.width;
+      height = result.height;
     } else {
       const result = await this.cloudinaryService.uploadBuffer(file.buffer, folder, publicId);
       storedUrl = result.secure_url;
+      width = result.width;
+      height = result.height;
     }
 
     const asset = this.assetRepo.create({
@@ -56,6 +102,10 @@ export class AssetsService {
       storageProvider: 'cloudinary',
       mimeType: file.mimetype,
       fileSizeBytes: file.size,
+      durationSeconds,
+      fps,
+      width,
+      height,
       metadata: {},
     });
 
