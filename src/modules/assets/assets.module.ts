@@ -5,10 +5,11 @@ import { VideoGeneration } from '../video-generations/entities/video-generation.
 import { AssetsController } from './assets.controller';
 import { AssetsService } from './assets.service';
 import { CloudinaryModule } from '../../common/cloudinary/cloudinary.module';
+import { MotionGeneration } from '../video-generations/entities/motion-generation.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Asset, VideoGeneration]), // ← thêm VideoGeneration
+    TypeOrmModule.forFeature([Asset, VideoGeneration, MotionGeneration]),
     CloudinaryModule,
   ],
   controllers: [AssetsController],

@@ -9,6 +9,7 @@ import { Repository } from 'typeorm';
 import { Asset } from './entities/asset.entity';
 import { VideoGeneration } from '../video-generations/entities/video-generation.entity';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
+import { MotionGeneration } from '../video-generations/entities/motion-generation.entity';
 
 const TAB_TO_SOURCE_TYPE: Record<string, string> = {
   creative: 'generated',
@@ -23,6 +24,8 @@ export class AssetsService {
     @InjectRepository(Asset) private readonly assetRepo: Repository<Asset>,
     @InjectRepository(VideoGeneration)
     private readonly videoGenerationRepo: Repository<VideoGeneration>,
+    @InjectRepository(MotionGeneration)
+    private readonly motionGenerationRepo: Repository<MotionGeneration>,
     private readonly cloudinaryService: CloudinaryService,
   ) {}
 
@@ -77,7 +80,7 @@ export class AssetsService {
     let width: number | undefined;
     let height: number | undefined;
     let thumbnailUrl: string | undefined;
-    
+
     if (isVideo) {
       const result = await this.cloudinaryService.uploadVideoBuffer(file.buffer, folder, publicId);
       storedUrl = result.secure_url;
@@ -139,38 +142,94 @@ export class AssetsService {
     const items = await qb.getMany();
 
     // Enrich: chỉ áp dụng cho tab Creative + asset loại video
+    // if (opts.tab === 'creative') {
+    //   const videoAssetIds = items
+    //     .filter((i) => i.assetType === 'video')
+    //     .map((i) => i.id);
+
+    //   if (videoAssetIds.length > 0) {
+    //     const generations = await this.videoGenerationRepo
+    //       .createQueryBuilder('vg')
+    //       .leftJoinAndSelect('vg.model', 'model')
+    //       .leftJoinAndSelect('vg.imageBeginAsset', 'beginAsset')
+    //       .leftJoinAndSelect('vg.imageEndAsset', 'endAsset')
+    //       .where('vg.outputAssetId IN (:...ids)', { ids: videoAssetIds })
+    //       .getMany();
+
+    //     const byOutputAssetId = new Map(
+    //       generations.map((g) => [g.outputAssetId, g]),
+    //     );
+
+    //     for (const item of items as any[]) {
+    //       const gen = byOutputAssetId.get(item.id);
+    //       if (!gen) continue;
+
+    //       item.prompt = gen.motionPrompt;
+    //       item.model = gen.model?.name ?? null;
+    //       item.mode = gen.generationMode;
+    //       item.frames = [gen.imageBeginAsset?.storedUrl, gen.imageEndAsset?.storedUrl].filter(Boolean);
+    //       // Ảnh đại diện video = frame begin, fallback về chính video nếu không có
+    //       item.thumbnailUrl = gen.imageBeginAsset?.storedUrl ?? null;
+    //     }
+    //   }
+    // }
+
     if (opts.tab === 'creative') {
-      const videoAssetIds = items
-        .filter((i) => i.assetType === 'video')
-        .map((i) => i.id);
+    const videoAssetIds = items
+      .filter((i) => i.assetType === 'video')
+      .map((i) => i.id);
 
-      if (videoAssetIds.length > 0) {
-        const generations = await this.videoGenerationRepo
-          .createQueryBuilder('vg')
-          .leftJoinAndSelect('vg.model', 'model')
-          .leftJoinAndSelect('vg.imageBeginAsset', 'beginAsset')
-          .leftJoinAndSelect('vg.imageEndAsset', 'endAsset')
-          .where('vg.outputAssetId IN (:...ids)', { ids: videoAssetIds })
-          .getMany();
+    if (videoAssetIds.length > 0) {
+      // video_generations (image-to-video thường)
+      const generations = await this.videoGenerationRepo
+        .createQueryBuilder('vg')
+        .leftJoinAndSelect('vg.model', 'model')
+        .leftJoinAndSelect('vg.imageBeginAsset', 'beginAsset')
+        .leftJoinAndSelect('vg.imageEndAsset', 'endAsset')
+        .where('vg.outputAssetId IN (:...ids)', { ids: videoAssetIds })
+        .getMany();
 
-        const byOutputAssetId = new Map(
-          generations.map((g) => [g.outputAssetId, g]),
-        );
+      const byOutputAssetId = new Map(
+        generations.map((g) => [g.outputAssetId, g]),
+      );
 
-        for (const item of items as any[]) {
-          const gen = byOutputAssetId.get(item.id);
-          if (!gen) continue;
+      // motion_generations (motion control)
+      const motionGenerations = await this.motionGenerationRepo
+        .createQueryBuilder('mg')
+        .leftJoinAndSelect('mg.model', 'model')
+        .leftJoinAndSelect('mg.thumbnailAsset', 'thumbnailAsset')
+        .leftJoinAndSelect('mg.characterImageAsset', 'characterImageAsset')
+        .where('mg.outputAssetId IN (:...ids)', { ids: videoAssetIds })
+        .getMany();
 
+      const motionByOutputAssetId = new Map(
+        motionGenerations.map((g) => [g.outputAssetId, g]),
+      );
+
+      for (const item of items as any[]) {
+        const gen = byOutputAssetId.get(item.id);
+        if (gen) {
           item.prompt = gen.motionPrompt;
           item.model = gen.model?.name ?? null;
           item.mode = gen.generationMode;
           item.frames = [gen.imageBeginAsset?.storedUrl, gen.imageEndAsset?.storedUrl].filter(Boolean);
-          // Ảnh đại diện video = frame begin, fallback về chính video nếu không có
           item.thumbnailUrl = gen.imageBeginAsset?.storedUrl ?? null;
+          continue;
+        }
+
+        const motionGen = motionByOutputAssetId.get(item.id);
+        if (motionGen) {
+          item.prompt = motionGen.motionPrompt;
+          item.model = motionGen.model?.name ?? null;
+          item.mode = motionGen.generationMode;
+          item.thumbnailUrl =
+            motionGen.thumbnailAsset?.storedUrl ??
+            motionGen.characterImageAsset?.storedUrl ??
+            null;
         }
       }
     }
-
+  }
     return { items, total: items.length };
   }
 
