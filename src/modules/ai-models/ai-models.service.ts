@@ -11,30 +11,53 @@ export class AiModelsService {
   ) {}
 
   // Lấy tất cả models (có thể filter theo provider code và model_type)
-  async findAll(providerCode?: string, modelType?: string, supportsMotionControl?: boolean): Promise<AiModel[]> {
+  // async findAll(providerCode?: string, modelType?: string, supportsMotionControl?: boolean): Promise<AiModel[]> {
+  //   const query = this.aiModelRepository
+  //     .createQueryBuilder('model')
+  //     .leftJoinAndSelect('model.provider', 'provider')
+  //     .where('model.is_active = :isActive', { isActive: true });
+
+  //   if (providerCode) {
+  //     query.andWhere('provider.code = :providerCode', { providerCode });
+  //   }
+
+  //   if (modelType) {
+  //     query.andWhere('model.model_type = :modelType', { modelType });
+  //   }
+
+  //   if (supportsMotionControl !== undefined) {           // ← thêm
+  //     query.andWhere(
+  //       'model.supports_motion_control = :smc',
+  //       { smc: supportsMotionControl },
+  //     );
+  //   }
+
+  //   return query.orderBy('model.name', 'ASC').getMany();
+  // }
+
+  async findAll(
+    providerCode?: string,
+    modelType?: string,
+    supportsMotionControl?: boolean,
+    supportsElements?: boolean,
+  ): Promise<AiModel[]> {
     const query = this.aiModelRepository
       .createQueryBuilder('model')
       .leftJoinAndSelect('model.provider', 'provider')
       .where('model.is_active = :isActive', { isActive: true });
 
-    if (providerCode) {
-      query.andWhere('provider.code = :providerCode', { providerCode });
+    if (providerCode) query.andWhere('provider.code = :providerCode', { providerCode });
+    if (modelType) query.andWhere('model.model_type = :modelType', { modelType });
+    if (supportsMotionControl !== undefined) {
+      query.andWhere('model.supports_motion_control = :smc', { smc: supportsMotionControl });
     }
-
-    if (modelType) {
-      query.andWhere('model.model_type = :modelType', { modelType });
-    }
-
-    if (supportsMotionControl !== undefined) {           // ← thêm
-      query.andWhere(
-        'model.supports_motion_control = :smc',
-        { smc: supportsMotionControl },
-      );
+    if (supportsElements !== undefined) {
+      query.andWhere('model.supports_elements = :se', { se: supportsElements });
     }
 
     return query.orderBy('model.name', 'ASC').getMany();
   }
-
+  
   // Lấy models theo provider code (dùng cho FE dropdown)
   async findByProvider(providerCode: string): Promise<AiModel[]> {
     return this.aiModelRepository
@@ -52,4 +75,5 @@ export class AiModelsService {
         relations: ['provider'],
     });
   }
+  
 }

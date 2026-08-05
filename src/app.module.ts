@@ -58,6 +58,7 @@ import { KlingModule } from './common/kling/kling.module';
 import { VideoGenerationsModule } from './modules/video-generations/video-generations.module';
 import { BytePlusModule } from './common/byteplus/byteplus.module';
 import { AssetsModule } from './modules/assets/assets.module';
+import { ElementsModule } from './modules/elements/elements.module';
 
 @Module({
   imports: [
@@ -89,6 +90,7 @@ import { AssetsModule } from './modules/assets/assets.module';
     BytePlusModule,
     VideoGenerationsModule,
     AssetsModule,
+    ElementsModule,
   ],
   controllers: [AppController],
   providers: [

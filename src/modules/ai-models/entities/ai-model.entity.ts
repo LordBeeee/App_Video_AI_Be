@@ -27,6 +27,12 @@ export class AiModel {
   @Column({ name: 'supports_motion_control', type: 'boolean', default: false })
   supportsMotionControl!: boolean;
 
+  @Column({ name: 'supports_elements', type: 'boolean', default: false })
+  supportsElements!: boolean;
+
+  @Column({ name: 'supports_element_video', type: 'boolean', default: false })
+  supportsElementVideo!: boolean;
+
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
 
