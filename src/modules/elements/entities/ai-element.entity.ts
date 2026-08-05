@@ -4,7 +4,7 @@ import {
   OneToMany, OneToOne,
 } from 'typeorm';
 import { User } from '../../user/entities/user.entity';
-import { AiModel } from '../../ai-models/entities/ai-model.entity';
+import { AiProvider } from '../../ai-provider/entities/ai-provider.entity';
 import { AiElementImage } from './ai-element-image.entity';
 import { AiElementVideo } from './ai-element-video.entity';
 
@@ -16,8 +16,8 @@ export class AiElement {
   @Column({ name: 'user_id', type: 'bigint' })
   userId!: number;
 
-  @Column({ name: 'model_id', type: 'bigint' })
-  modelId!: number;
+  @Column({ name: 'provider_id', type: 'bigint' })
+  providerId!: number;
 
   @Column({ name: 'project_id', type: 'bigint', nullable: true })
   projectId!: number | null;
@@ -52,7 +52,7 @@ export class AiElement {
   @Column({ name: 'error_message', type: 'text', nullable: true })
   errorMessage!: string | null;
 
-  @Column({ name: 'is_favorite', type: 'boolean', default: false })  // ← THÊM
+  @Column({ name: 'is_favorite', type: 'boolean', default: false })
   isFavorite!: boolean;
 
   @CreateDateColumn({ name: 'created_at' })
@@ -65,9 +65,9 @@ export class AiElement {
   @JoinColumn({ name: 'user_id' })
   user!: User;
 
-  @ManyToOne(() => AiModel)
-  @JoinColumn({ name: 'model_id' })
-  model!: AiModel;
+  @ManyToOne(() => AiProvider)
+  @JoinColumn({ name: 'provider_id' })
+  provider!: AiProvider;
 
   @OneToMany(() => AiElementImage, (img) => img.element)
   images!: AiElementImage[];

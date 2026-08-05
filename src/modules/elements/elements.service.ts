@@ -11,7 +11,7 @@ import { AiElement } from './entities/ai-element.entity';
 import { AiElementImage } from './entities/ai-element-image.entity';
 import { AiElementVideo } from './entities/ai-element-video.entity';
 import { Asset } from '../assets/entities/asset.entity';
-import { AiModelsService } from '../ai-models/ai-models.service';
+import { AiProvider } from '../ai-provider/entities/ai-provider.entity';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { KlingService } from '../../common/kling/kling.service';
 import { CreateElementDto } from './dto/create-element.dto';
@@ -31,19 +31,15 @@ export class ElementsService {
     @InjectRepository(AiElementImage) private elementImageRepo: Repository<AiElementImage>,
     @InjectRepository(AiElementVideo) private elementVideoRepo: Repository<AiElementVideo>,
     @InjectRepository(Asset) private assetRepo: Repository<Asset>,
-    private aiModelsService: AiModelsService,
+    @InjectRepository(AiProvider) private providerRepo: Repository<AiProvider>,
     private cloudinaryService: CloudinaryService,
     private klingService: KlingService,
   ) {}
 
   async create(userId: number, dto: CreateElementDto, files: ElementFiles) {
-    // 1. Validate model + capability
-    const model = await this.aiModelsService.findOne(dto.modelId);
-    if (!model) throw new BadRequestException('Model không tồn tại');
-    if (!model.supportsElements) throw new BadRequestException('Model không hỗ trợ Elements');
-    if (dto.referenceType === 'video_refer' && !model.supportsElementVideo) {
-      throw new BadRequestException('Model không hỗ trợ Element từ video');
-    }
+    // 1. Validate provider
+    const provider = await this.providerRepo.findOne({ where: { id: dto.providerId } });
+    if (!provider) throw new BadRequestException('Provider không tồn tại');
 
     // 2. Validate field cơ bản
     if (!dto.elementName?.trim()) throw new BadRequestException('Tên Element là bắt buộc');
@@ -91,7 +87,7 @@ export class ElementsService {
     const element = await this.elementRepo.save(
       this.elementRepo.create({
         userId,
-        modelId: dto.modelId,
+        providerId: dto.providerId,
         projectId: null,
         elementName: dto.elementName,
         elementDescription: dto.elementDescription,
@@ -315,7 +311,7 @@ export class ElementsService {
   async getHistory(userId: number) {
     const elements = await this.elementRepo.find({
       where: { userId },
-      relations: ['model', 'model.provider', 'images', 'images.asset', 'video', 'video.asset'],
+      relations: ['provider', 'images', 'images.asset', 'video', 'video.asset'],
       order: { createdAt: 'DESC' },
       take: 50,
     });
@@ -333,8 +329,7 @@ export class ElementsService {
         referenceType: el.referenceType,
         elementVoiceId: el.elementVoiceId,
         externalElementId: el.status === 'succeeded' ? el.externalElementId : null,
-        modelName: el.model?.name ?? 'Unknown',
-        providerName: el.model?.provider?.name ?? 'Unknown',
+        providerName: el.provider?.name ?? 'Unknown',
         frontalImageUrl: frontal?.asset?.storedUrl ?? null,
         referImageUrls: refers.map((r) => r.asset?.storedUrl).filter(Boolean),
         videoUrl: el.video?.asset?.storedUrl ?? null,

@@ -48,7 +48,7 @@ export class ElementsController {
     }
 
     const dto: CreateElementDto = {
-      modelId: Number(body.modelId),
+      providerId: Number(body.providerId),
       referenceType: body.referenceType,
       elementName: body.elementName,
       elementDescription: body.elementDescription,

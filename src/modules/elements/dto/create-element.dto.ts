@@ -1,5 +1,5 @@
 export class CreateElementDto {
-  modelId!: number;
+  providerId!: number;
   referenceType!: 'image_refer' | 'video_refer';
   elementName!: string;         // ≤ 20 ký tự
   elementDescription!: string;  // ≤ 100 ký tự
