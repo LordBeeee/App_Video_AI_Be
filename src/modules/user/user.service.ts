@@ -539,11 +539,56 @@ export class UserService {
     return { success: true, message: 'Reset mật khẩu thành công' }
   }
 
+  // async deleteEmployee(id: number) {
+  //   const user = await this.userRepository.findOne({ where: { id } })
+  //   if (!user) throw new NotFoundException('Không tìm thấy nhân viên')
+
+  //   await this.userRepository.delete(id)
+
+  //   return { success: true, message: 'Xóa nhân viên thành công' }
+  // }
+
   async deleteEmployee(id: number) {
     const user = await this.userRepository.findOne({ where: { id } })
     if (!user) throw new NotFoundException('Không tìm thấy nhân viên')
 
-    await this.userRepository.delete(id)
+    await this.dataSource.transaction(async (manager) => {
+      // video_generations tham chiếu assets (RESTRICT)
+      await manager.query(
+        `DELETE FROM video_generations
+        WHERE image_begin_asset_id IN (SELECT id FROM assets WHERE user_id = $1)
+            OR image_end_asset_id   IN (SELECT id FROM assets WHERE user_id = $1)`,
+        [id],
+      )
+
+      // motion_generations tham chiếu assets (RESTRICT)
+      await manager.query(
+        `DELETE FROM motion_generations
+        WHERE character_image_asset_id  IN (SELECT id FROM assets WHERE user_id = $1)
+            OR motion_reference_asset_id IN (SELECT id FROM assets WHERE user_id = $1)`,
+        [id],
+      )
+
+      // project_reference_images tham chiếu assets (RESTRICT) ← thêm mới
+      await manager.query(
+        `DELETE FROM project_reference_images
+        WHERE asset_id IN (SELECT id FROM assets WHERE user_id = $1)`,
+        [id],
+      )
+
+      // ai_element_images / ai_element_videos tham chiếu assets (RESTRICT)
+      await manager.query(
+        `DELETE FROM ai_element_images WHERE asset_id IN (SELECT id FROM assets WHERE user_id = $1)`,
+        [id],
+      )
+      await manager.query(
+        `DELETE FROM ai_element_videos WHERE asset_id IN (SELECT id FROM assets WHERE user_id = $1)`,
+        [id],
+      )
+
+      // Giờ mới xóa user — phần còn lại (projects, assets, ai_elements...) tự cascade
+      await manager.delete(User, id)
+    })
 
     return { success: true, message: 'Xóa nhân viên thành công' }
   }
