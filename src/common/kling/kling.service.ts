@@ -31,6 +31,8 @@ export interface KlingCreateVideoDto {
   shotType?: 'customize' | 'intelligence';
   // Bắt buộc khi multiShot=true + shotType='customize'
   multiPrompt?: KlingMultiPromptItem[];
+
+  elementList?: number[];
 }
 
 export interface KlingVideo {
@@ -174,6 +176,12 @@ export class KlingService {
 
     if (dto.imageTailUrl) {
       payload.image_tail = dto.imageTailUrl;
+    }
+    
+    if (dto.elementList?.length) {
+      payload.element_list = dto.elementList.map((elementId) => ({
+        element_id: elementId,
+      }));
     }
 
     if (dto.multiShot) {

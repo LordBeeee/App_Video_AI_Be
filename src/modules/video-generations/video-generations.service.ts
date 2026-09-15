@@ -4,7 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In} from 'typeorm';
 import { VideoGeneration } from './entities/video-generation.entity';
 import { MotionGeneration } from './entities/motion-generation.entity';
 import { Asset } from '../assets/entities/asset.entity';
@@ -14,6 +14,8 @@ import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { KlingService } from '../../common/kling/kling.service';
 import { BytePlusService } from '../../common/byteplus/byteplus.service';
 import { CreateMotionControlVideoDto, CreateVideoDto } from './dto/create-video.dto';
+import { VideoGenerationElement } from './entities/video-generation-element.entity';
+import { AiElement } from '../elements/entities/ai-element.entity';
 
 @Injectable()
 export class VideoGenerationsService {
@@ -31,6 +33,12 @@ export class VideoGenerationsService {
 
     @InjectRepository(Project)
     private projectRepo: Repository<Project>,
+
+    @InjectRepository(VideoGenerationElement)
+    private videoGenerationElementRepo: Repository<VideoGenerationElement>,
+
+    @InjectRepository(AiElement)
+    private aiElementRepo: Repository<AiElement>,
 
     private aiModelsService: AiModelsService,
     private cloudinaryService: CloudinaryService,
@@ -52,6 +60,10 @@ export class VideoGenerationsService {
     }
 
     const isByteplus = model.provider?.code === 'byteplus';
+
+    // ── NEW: resolve elements ─────────────────────────────────────────
+    const elements = await this.resolveElements(userId, dto.elementIds, model.supportsElements);
+    const elementExternalIds = elements.map((e) => Number(e.externalElementId));
 
     // 2. Validate multi-shot params (chỉ áp dụng cho Kling; BytePlus không hỗ trợ multi-shot)
     if (!isByteplus && dto.multiShot) {
@@ -180,6 +192,7 @@ export class VideoGenerationsService {
         multiShot:     dto.multiShot,
         shotType:      dto.shotType,
         multiPrompt:   dto.multiPrompt,
+        elementList:   elementExternalIds.length ? elementExternalIds : undefined,
       });
 
       if (klingCreate.code !== 0) {
@@ -218,6 +231,7 @@ export class VideoGenerationsService {
           mode: dto.mode,
           multiShot: dto.multiShot ?? false,
           shotType: dto.shotType,
+          elementIds: elements.map((e) => e.id),
         },
         requestPayload: {
           modelName:    model.code,
@@ -229,11 +243,24 @@ export class VideoGenerationsService {
           multiShot:    dto.multiShot ?? false,
           shotType:     dto.shotType,
           multiPrompt:  dto.multiPrompt,
+          elementList:  elementExternalIds,
         },
         responsePayload: responsePayloadRaw,
         startedAt: new Date(),
       }),
     );
+
+    if (elements.length > 0) {
+      await this.videoGenerationElementRepo.save(
+        elements.map((el, idx) =>
+          this.videoGenerationElementRepo.create({
+            videoGenerationId: videoGen.id,
+            elementId: el.id,
+            tagId: String(idx + 1),
+          }),
+        ),
+      );
+    }
 
     // 8. Polling ngầm — chọn service theo provider
     if (isByteplus) {
@@ -260,6 +287,7 @@ export class VideoGenerationsService {
       multiShot:     !isByteplus && (dto.multiShot ?? false),
       shotType:      dto.shotType,
       cost:          dto.cost ?? 0,
+      elementsUsed: elements.map((e) => ({ id: e.id, name: e.elementName })),
     };
   }
 
@@ -322,6 +350,53 @@ export class VideoGenerationsService {
         },
       }),
     );
+  }
+
+    /**
+   * Validate + resolve danh sách element user chọn.
+   * - Model phải supportsElements = true
+   * - Tối đa 3 element, không trùng lặp
+   * - Element phải thuộc user, status = 'succeeded' (đã có externalElementId từ Kling)
+   * - Trả về đúng thứ tự user đã chọn
+   */
+  private async resolveElements(
+    userId: number,
+    elementIds: number[] | undefined,
+    modelSupportsElements: boolean,
+  ): Promise<AiElement[]> {
+    if (!elementIds || elementIds.length === 0) return [];
+
+    if (!modelSupportsElements) {
+      throw new BadRequestException('Model đã chọn không hỗ trợ Element');
+    }
+    if (elementIds.length > 3) {
+      throw new BadRequestException('Chỉ được chọn tối đa 3 Element');
+    }
+
+    const uniqueIds = [...new Set(elementIds)];
+    if (uniqueIds.length !== elementIds.length) {
+      throw new BadRequestException('Danh sách Element bị trùng lặp');
+    }
+
+    const elements = await this.aiElementRepo.find({ where: { id: In(uniqueIds) } });
+
+    if (elements.length !== uniqueIds.length) {
+      throw new BadRequestException('Một hoặc nhiều Element không tồn tại');
+    }
+
+    for (const el of elements) {
+      if (Number(el.userId) !== Number(userId)) {
+        throw new BadRequestException(`Không có quyền dùng Element "${el.elementName}"`);
+      }
+      if (el.status !== 'succeeded' || !el.externalElementId) {
+        throw new BadRequestException(
+          `Element "${el.elementName}" chưa sẵn sàng (status: ${el.status})`,
+        );
+      }
+    }
+
+    // giữ đúng thứ tự user chọn (ảnh hưởng tag <<<element_N>>> nếu prompt có dùng)
+    return uniqueIds.map((id) => elements.find((e) => e.id === id)!);
   }
 
   private async pollAndSaveResult(

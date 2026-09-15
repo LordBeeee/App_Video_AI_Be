@@ -26,6 +26,8 @@ export class CreateVideoDto {
 
   startImageAssetId?: number;
   endImageAssetId?: number;
+
+  elementIds?: number[];
 }
 
 export class CreateMotionControlVideoDto {
