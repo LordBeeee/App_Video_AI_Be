@@ -9,7 +9,7 @@ export class AppController {
     };
   }
 
-  @Head("/health")
+  @Head()
   headHello() {
     return {
       message: 'OK',
