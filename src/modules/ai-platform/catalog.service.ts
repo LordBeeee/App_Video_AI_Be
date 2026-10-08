@@ -13,6 +13,28 @@ import { OpenRouterService } from './openrouter.service';
 
 export type AiModality = 'image' | 'video' | 'audio' | 'chat';
 
+const DEFAULT_IMAGE_MODEL_ALLOWLIST = [
+  'bytedance-seed/seedream-5-0-pro',
+  'bytedance-seed/seedream-5-0-flash',
+  'bytedance-seed/seedream-5-0-lite',
+  'bytedance-seed/seedream-4.5',
+  'openai/gpt-image-2.5-sunburst',
+  'openai/gpt-image-2.5-flare',
+  'openai/gpt-image-2',
+  'openai/gpt-5.4-image-2',
+  'openai/gpt-5-image',
+  'openai/gpt-5-image-mini',
+  'openai/gpt-image-1',
+  'openai/gpt-image-1-mini',
+  'google/gemini-nano-banana-2.1',
+  'google/gemini-3.1-flash-lite-image',
+  'google/gemini-3.1-flash-image',
+  'google/gemini-3-pro-image',
+  'google/gemini-3.1-flash-image-preview',
+  'google/gemini-3-pro-image-preview',
+  'google/gemini-2.5-flash-image',
+];
+
 const DEFAULT_VIDEO_MODEL_ALLOWLIST = [
   'google/veo-3.1',
   'google/veo-3.1-fast',
@@ -99,23 +121,23 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     });
     await this.models.save(records, { chunk: 100 });
 
-    if (modality === 'video') {
+    if (modality === 'image' || modality === 'video') {
       const allowed = new Set(slugs);
-      const staleVideoModels = (await this.models.find()).filter(
+      const staleModels = (await this.models.find()).filter(
         (item) =>
-          item.modalities?.includes('video') &&
+          item.modalities?.includes(modality) &&
           !allowed.has(item.openrouterSlug),
       );
 
-      if (staleVideoModels.length) {
-        for (const item of staleVideoModels) {
+      if (staleModels.length) {
+        for (const item of staleModels) {
           item.modalities = item.modalities.filter(
-            (value) => value !== 'video',
+            (value) => value !== modality,
           );
           item.isActive = item.modalities.length > 0;
           item.syncedAt = now;
         }
-        await this.models.save(staleVideoModels, { chunk: 100 });
+        await this.models.save(staleModels, { chunk: 100 });
       }
     }
   }
@@ -127,16 +149,37 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     let data: any[];
     if (modality === 'image') {
       const response = await this.openRouter.listImageModels();
-      data = (response.data || []).map((model: any) => ({
-        id: model.id,
-        name: model.name,
-        description: model.description,
-        modality,
-        capabilities: model.supported_parameters || {},
-        inputModalities: model.architecture?.input_modalities || ['text'],
-        supportsStreaming: !!model.supports_streaming,
-        endpointsPath: model.endpoints,
-      }));
+      const configuredAllowlist = (
+        this.config.get<string>('OPENROUTER_IMAGE_MODEL_ALLOWLIST') || ''
+      )
+        .split(',')
+        .map((slug) => slug.trim())
+        .filter(Boolean);
+      const imageModelAllowlist =
+        configuredAllowlist.length > 0
+          ? configuredAllowlist
+          : DEFAULT_IMAGE_MODEL_ALLOWLIST;
+      const allowedOrder = new Map(
+        imageModelAllowlist.map((slug, index) => [slug, index]),
+      );
+
+      data = (response.data || [])
+        .filter((model: any) => allowedOrder.has(model.id))
+        .sort(
+          (left: any, right: any) =>
+            (allowedOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+            (allowedOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER),
+        )
+        .map((model: any) => ({
+          id: model.id,
+          name: model.name,
+          description: model.description,
+          modality,
+          capabilities: model.supported_parameters || {},
+          inputModalities: model.architecture?.input_modalities || ['text'],
+          supportsStreaming: !!model.supports_streaming,
+          endpointsPath: model.endpoints,
+        }));
     } else if (modality === 'video') {
       const response = await this.openRouter.listVideoModels();
       const configuredAllowlist = (
