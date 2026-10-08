@@ -62,6 +62,23 @@ export class CloudinaryService {
     });
   }
 
+  uploadAudioBuffer(
+    buffer: Buffer,
+    folder: string,
+    publicId: string,
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        { folder, public_id: publicId, resource_type: 'video', format: 'mp3' },
+        (error, result) => {
+          if (error) return reject(error);
+          resolve(result!.secure_url);
+        },
+      );
+      streamifier.createReadStream(buffer).pipe(uploadStream);
+    });
+  }
+
   // async uploadVideoBuffer(
   //   buffer: Buffer,
   //   folder: string,

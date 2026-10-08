@@ -1,25 +1,25 @@
-import { NestFactory } from '@nestjs/core'
-import { AppModule } from './app.module'
-import cookieParser from 'cookie-parser'
-import helmet from 'helmet'
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule)
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   // Bảo vệ HTTP headers
-  app.use(helmet())
+  app.use(helmet());
 
   // Đọc cookie từ request
-  app.use(cookieParser())
+  app.use(cookieParser());
 
   app.enableCors({
     origin: process.env.FRONTEND_URL || 'http://localhost:5173',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type'],
     credentials: true,
-  })
+  });
 
-  await app.listen(process.env.PORT || 3000)
+  await app.listen(process.env.PORT || 3000);
 }
 
-bootstrap()
+bootstrap();

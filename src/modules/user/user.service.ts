@@ -1,639 +1,342 @@
-import { Injectable, NotFoundException, ConflictException, UnauthorizedException } from '@nestjs/common'
-import { InjectRepository, InjectDataSource } from '@nestjs/typeorm'
-import { DataSource, Repository } from 'typeorm'
-import { User } from './entities/user.entity'
-import * as bcrypt from 'bcrypt'
-import { CreateUserDto } from './dto/create-user.dto'
-import { UpdateEmployeeDto } from './dto/update-employee.dto'
-import { CloudinaryService } from '../../common/cloudinary/cloudinary.service'
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import * as bcrypt from 'bcrypt';
+import { DataSource, Repository } from 'typeorm';
+import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateEmployeeDto } from './dto/update-employee.dto';
+import { User } from './entities/user.entity';
 
 @Injectable()
 export class UserService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-
-    @InjectDataSource()
-    private readonly dataSource: DataSource,
-
-    private readonly cloudinaryService: CloudinaryService, // ← THÊM
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   findByEmail(email: string) {
     return this.userRepository.findOne({
       where: { email },
       relations: ['role'],
-    })
+    });
   }
 
   async findMe(userId: number) {
     const user = await this.userRepository.findOne({
       where: { id: userId },
       relations: ['role'],
-    })
-    if (!user) return null
-
+    });
+    if (!user) return null;
     return {
-      id:          user.id,
-      email:       user.email,
-      fullName:    user.fullName,
-      username:    user.username,
-      avatarUrl:   user.avatarUrl,
-      phone:       user.phone,
-      roleId:      user.roleId,
-      roleName:    user.role?.name,
-      status:      user.status,
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      username: user.username,
+      avatarUrl: user.avatarUrl,
+      phone: user.phone,
+      roleId: user.roleId,
+      roleName: user.role?.name,
+      status: user.status,
       lastLoginAt: user.lastLoginAt,
-      createdAt:   user.createdAt,
-      updatedAt:   user.updatedAt,
-    }
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
   }
 
   async updateLastLogin(userId: number) {
     await this.userRepository.update(userId, {
       lastLoginAt: new Date(),
-      updatedAt:   new Date(),
-    })
+      updatedAt: new Date(),
+    });
   }
 
   async getStats(userId: number) {
-    const rows = await this.dataSource.query(
-      // `SELECT total_prompts, total_images, total_videos, total_cost
-      //  FROM v_user_stats
-      //  WHERE user_id = $1`,
-      // [userId],
+    const [row] = await this.dataSource.query(
       `SELECT
-        total_prompts,
-        total_images,
-        (total_videos + total_motions) AS total_videos,
-        total_cost
-      FROM v_user_stats
-      WHERE user_id = $1`,
+        COUNT(*) FILTER (WHERE modality = 'chat' AND status = 'succeeded')::int AS total_prompts,
+        COUNT(*) FILTER (WHERE modality = 'image' AND status = 'succeeded')::int AS total_images,
+        COUNT(*) FILTER (WHERE modality = 'video' AND status = 'succeeded')::int AS total_videos,
+        COALESCE(SUM(charged_vnd) FILTER (WHERE status = 'succeeded'), 0)::bigint AS total_cost
+       FROM ai_generations WHERE user_id = $1`,
       [userId],
-    )
-
-    const row = rows[0] ?? {
-      total_prompts: 0,
-      total_images:  0,
-      total_videos:  0,
-      total_cost:    0,
-    }
-
+    );
     return {
-      totalPrompts: Number(row.total_prompts),
-      totalImages:  Number(row.total_images),
-      totalVideos:  Number(row.total_videos),
-      totalCost:    Number(row.total_cost),
-    }
+      totalPrompts: Number(row?.total_prompts ?? 0),
+      totalImages: Number(row?.total_images ?? 0),
+      totalVideos: Number(row?.total_videos ?? 0),
+      totalCost: Number(row?.total_cost ?? 0),
+    };
   }
 
-  // async getDailyStats(userId: number, month: number, year: number) {
-  //   const daysInMonth = new Date(year, month, 0).getDate()
-  //   const TZ = 'Asia/Ho_Chi_Minh'
-
-  //   const [promptRows, imageRows, videoRows] = await Promise.all([
-  //     this.dataSource.query(
-  //       `SELECT
-  //         EXTRACT(DAY FROM pg.created_at AT TIME ZONE $4)::int AS day,
-  //         COUNT(*)::int                                          AS cnt,
-  //         COALESCE(SUM(pg.cost), 0)::bigint                    AS cost
-  //       FROM prompt_generations pg
-  //       JOIN projects p ON p.id = pg.project_id
-  //       WHERE p.user_id = $1
-  //         AND pg.status = 'succeeded'
-  //         AND EXTRACT(MONTH FROM pg.created_at AT TIME ZONE $4) = $2
-  //         AND EXTRACT(YEAR  FROM pg.created_at AT TIME ZONE $4) = $3
-  //       GROUP BY 1`,
-  //       [userId, month, year, TZ],
-  //     ),
-  //     this.dataSource.query(
-  //       `SELECT
-  //         EXTRACT(DAY FROM ig.created_at AT TIME ZONE $4)::int AS day,
-  //         COUNT(*)::int                                          AS cnt,
-  //         COALESCE(SUM(ig.cost), 0)::bigint                    AS cost
-  //       FROM image_generations ig
-  //       JOIN projects p ON p.id = ig.project_id
-  //       WHERE p.user_id = $1
-  //         AND ig.status = 'succeeded'
-  //         AND EXTRACT(MONTH FROM ig.created_at AT TIME ZONE $4) = $2
-  //         AND EXTRACT(YEAR  FROM ig.created_at AT TIME ZONE $4) = $3
-  //       GROUP BY 1`,
-  //       [userId, month, year, TZ],
-  //     ),
-  //     this.dataSource.query(
-  //       `SELECT
-  //         EXTRACT(DAY FROM vg.created_at AT TIME ZONE $4)::int AS day,
-  //         COUNT(*)::int                                          AS cnt,
-  //         COALESCE(SUM(vg.cost), 0)::bigint                    AS cost
-  //       FROM video_generations vg
-  //       JOIN projects p ON p.id = vg.project_id
-  //       WHERE p.user_id = $1
-  //         AND vg.status = 'succeeded'
-  //         AND EXTRACT(MONTH FROM vg.created_at AT TIME ZONE $4) = $2
-  //         AND EXTRACT(YEAR  FROM vg.created_at AT TIME ZONE $4) = $3
-  //       GROUP BY 1`,
-  //       [userId, month, year, TZ],
-  //     ),
-  //   ])
-
-  //   type DayEntry = { cnt: number; cost: number }
-  //   const toMap = (rows: any[]): Record<number, DayEntry> =>
-  //     Object.fromEntries(
-  //       rows.map((r) => [r.day, { cnt: Number(r.cnt), cost: Number(r.cost) }]),
-  //     )
-
-  //   const pm = toMap(promptRows)
-  //   const im = toMap(imageRows)
-  //   const vm = toMap(videoRows)
-
-  //   const generations: { day: number; prompt: number; images: number; videos: number }[] = []
-  //   const spending:    { day: number; total: number }[] = []
-
-  //   for (let d = 1; d <= daysInMonth; d++) {
-  //     generations.push({ day: d, prompt: pm[d]?.cnt ?? 0, images: im[d]?.cnt ?? 0, videos: vm[d]?.cnt ?? 0 })
-  //     spending.push({ day: d, total: (pm[d]?.cost ?? 0) + (im[d]?.cost ?? 0) + (vm[d]?.cost ?? 0) })
-  //   }
-
-  //   return { generations, spending }
-  // }
   async getDailyStats(userId: number, month: number, year: number) {
-    const daysInMonth = new Date(year, month, 0).getDate()
-    const TZ = 'Asia/Ho_Chi_Minh'
- 
-    const [promptRows, imageRows, videoRows, motionRows] = await Promise.all([
-      this.dataSource.query(
-        `SELECT
-          EXTRACT(DAY FROM pg.created_at AT TIME ZONE $4)::int AS day,
-          COUNT(*)::int                                          AS cnt,
-          COALESCE(SUM(pg.cost), 0)::bigint                    AS cost
-        FROM prompt_generations pg
-        JOIN projects p ON p.id = pg.project_id
-        WHERE p.user_id = $1
-          AND pg.status = 'succeeded'
-          AND EXTRACT(MONTH FROM pg.created_at AT TIME ZONE $4) = $2
-          AND EXTRACT(YEAR  FROM pg.created_at AT TIME ZONE $4) = $3
-        GROUP BY 1`,
-        [userId, month, year, TZ],
-      ),
-      this.dataSource.query(
-        `SELECT
-          EXTRACT(DAY FROM ig.created_at AT TIME ZONE $4)::int AS day,
-          COUNT(*)::int                                          AS cnt,
-          COALESCE(SUM(ig.cost), 0)::bigint                    AS cost
-        FROM image_generations ig
-        JOIN projects p ON p.id = ig.project_id
-        WHERE p.user_id = $1
-          AND ig.status = 'succeeded'
-          AND EXTRACT(MONTH FROM ig.created_at AT TIME ZONE $4) = $2
-          AND EXTRACT(YEAR  FROM ig.created_at AT TIME ZONE $4) = $3
-        GROUP BY 1`,
-        [userId, month, year, TZ],
-      ),
-      this.dataSource.query(
-        `SELECT
-          EXTRACT(DAY FROM vg.created_at AT TIME ZONE $4)::int AS day,
-          COUNT(*)::int                                          AS cnt,
-          COALESCE(SUM(vg.cost), 0)::bigint                    AS cost
-        FROM video_generations vg
-        JOIN projects p ON p.id = vg.project_id
-        WHERE p.user_id = $1
-          AND vg.status = 'succeeded'
-          AND EXTRACT(MONTH FROM vg.created_at AT TIME ZONE $4) = $2
-          AND EXTRACT(YEAR  FROM vg.created_at AT TIME ZONE $4) = $3
-        GROUP BY 1`,
-        [userId, month, year, TZ],
-      ),
-      // ← THÊM: query motion_generations
-      this.dataSource.query(
-        `SELECT
-          EXTRACT(DAY FROM mg.created_at AT TIME ZONE $4)::int AS day,
-          COUNT(*)::int                                          AS cnt,
-          COALESCE(SUM(mg.cost), 0)::bigint                    AS cost
-        FROM motion_generations mg
-        JOIN projects p ON p.id = mg.project_id
-        WHERE p.user_id = $1
-          AND mg.status = 'succeeded'
-          AND EXTRACT(MONTH FROM mg.created_at AT TIME ZONE $4) = $2
-          AND EXTRACT(YEAR  FROM mg.created_at AT TIME ZONE $4) = $3
-        GROUP BY 1`,
-        [userId, month, year, TZ],
-      ),
-    ])
- 
-    type DayEntry = { cnt: number; cost: number }
-    const toMap = (rows: any[]): Record<number, DayEntry> =>
-      Object.fromEntries(
-        rows.map((r) => [r.day, { cnt: Number(r.cnt), cost: Number(r.cost) }]),
-      )
- 
-    const pm = toMap(promptRows)
-    const im = toMap(imageRows)
-    const vm = toMap(videoRows)
-    const mm = toMap(motionRows) // ← THÊM
- 
-    const generations: { day: number; prompt: number; images: number; videos: number }[] = []
-    const spending:    { day: number; total: number }[] = []
- 
-    for (let d = 1; d <= daysInMonth; d++) {
-      // ← video = video_generations + motion_generations
-      const videoCnt  = (vm[d]?.cnt  ?? 0) + (mm[d]?.cnt  ?? 0)
-      const videoCost = (vm[d]?.cost ?? 0) + (mm[d]?.cost ?? 0)
- 
-      generations.push({
-        day:    d,
-        prompt: pm[d]?.cnt ?? 0,
-        images: im[d]?.cnt ?? 0,
-        videos: videoCnt,
-      })
-      spending.push({
-        day:   d,
-        total: (pm[d]?.cost ?? 0) + (im[d]?.cost ?? 0) + videoCost,
-      })
-    }
- 
-    return { generations, spending }
+    return this.dailyStats(
+      'WHERE user_id = $1',
+      [userId, month, year],
+      month,
+      year,
+    );
   }
 
-  // ─── MỚI: Thống kê toàn hệ thống (admin) ────────────────────────────────────
   async getSystemStats() {
-    const rows = await this.dataSource.query(
+    const [row] = await this.dataSource.query(
       `SELECT
-        COALESCE(SUM(total_prompts), 0) AS total_prompts,
-        COALESCE(SUM(total_images), 0)  AS total_images,
-        COALESCE(SUM(total_videos), 0)  AS total_videos,
-        COALESCE(SUM(total_cost), 0)    AS total_cost
-      FROM v_user_stats`,
-    )
-
-    const row = rows[0] ?? {
-      total_prompts: 0,
-      total_images:  0,
-      total_videos:  0,
-      total_cost:    0,
-    }
-
+        COUNT(*) FILTER (WHERE modality = 'chat' AND status = 'succeeded')::int AS total_prompts,
+        COUNT(*) FILTER (WHERE modality = 'image' AND status = 'succeeded')::int AS total_images,
+        COUNT(*) FILTER (WHERE modality = 'video' AND status = 'succeeded')::int AS total_videos,
+        COALESCE(SUM(charged_vnd) FILTER (WHERE status = 'succeeded'), 0)::bigint AS total_cost
+       FROM ai_generations`,
+    );
     return {
-      totalPrompts: Number(row.total_prompts),
-      totalImages:  Number(row.total_images),
-      totalVideos:  Number(row.total_videos),
-      totalCost:    Number(row.total_cost),
-    }
+      totalPrompts: Number(row?.total_prompts ?? 0),
+      totalImages: Number(row?.total_images ?? 0),
+      totalVideos: Number(row?.total_videos ?? 0),
+      totalCost: Number(row?.total_cost ?? 0),
+    };
   }
 
-  // async getSystemDailyStats(month: number, year: number) {
-  //   const daysInMonth = new Date(year, month, 0).getDate()
-
-  //   const rows = await this.dataSource.query(
-  //     `SELECT day, task_type, cnt, cost
-  //      FROM v_system_daily_stats
-  //      WHERE EXTRACT(MONTH FROM day) = $1
-  //        AND EXTRACT(YEAR  FROM day) = $2`,
-  //     [month, year],
-  //   )
-
-  //   type DayEntry = { cnt: number; cost: number }
-  //   const map: Record<number, Record<string, DayEntry>> = {}
-
-  //   for (const r of rows) {
-  //     const d = new Date(r.day).getDate()
-  //     map[d] ??= {}
-  //     map[d][r.task_type] = { cnt: Number(r.cnt), cost: Number(r.cost) }
-  //   }
-
-  //   const generations: { day: number; prompt: number; images: number; videos: number }[] = []
-  //   const spending:    { day: number; total: number }[] = []
-
-  //   for (let d = 1; d <= daysInMonth; d++) {
-  //     const p = map[d]?.prompt ?? { cnt: 0, cost: 0 }
-  //     const i = map[d]?.image  ?? { cnt: 0, cost: 0 }
-  //     const v = map[d]?.video  ?? { cnt: 0, cost: 0 }
-
-  //     generations.push({ day: d, prompt: p.cnt, images: i.cnt, videos: v.cnt })
-  //     spending.push({ day: d, total: p.cost + i.cost + v.cost })
-  //   }
-
-  //   return { generations, spending }
-  // }
-  
   async getSystemDailyStats(month: number, year: number) {
-    const daysInMonth = new Date(year, month, 0).getDate()
-    const TZ = 'Asia/Ho_Chi_Minh'
- 
-    // v_system_daily_stats chưa có motion_generations → query riêng song song
-    const [viewRows, motionRows] = await Promise.all([
-      this.dataSource.query(
-        `SELECT day, task_type, cnt, cost
-         FROM v_system_daily_stats
-         WHERE EXTRACT(MONTH FROM day) = $1
-           AND EXTRACT(YEAR  FROM day) = $2`,
-        [month, year],
-      ),
-      // ← THÊM: query motion_generations toàn hệ thống
-      this.dataSource.query(
-        `SELECT
-          (mg.created_at AT TIME ZONE $3)::date          AS day,
-          COUNT(*)::int                                   AS cnt,
-          COALESCE(SUM(mg.cost), 0)::bigint              AS cost
-        FROM motion_generations mg
-        WHERE mg.status = 'succeeded'
-          AND EXTRACT(MONTH FROM mg.created_at AT TIME ZONE $3) = $1
-          AND EXTRACT(YEAR  FROM mg.created_at AT TIME ZONE $3) = $2
-        GROUP BY 1`,
-        [month, year, TZ],
-      ),
-    ])
- 
-    type DayEntry = { cnt: number; cost: number }
-    const map: Record<number, Record<string, DayEntry>> = {}
- 
-    // Đổ dữ liệu từ view (prompt, image, video)
-    for (const r of viewRows) {
-      const d = new Date(r.day).getDate()
-      map[d] ??= {}
-      map[d][r.task_type] = { cnt: Number(r.cnt), cost: Number(r.cost) }
+    return this.dailyStats('', [month, year], month, year);
+  }
+
+  private async dailyStats(
+    userClause: string,
+    params: number[],
+    month: number,
+    year: number,
+  ) {
+    const userScoped = Boolean(userClause);
+    const monthParam = userScoped ? '$2' : '$1';
+    const yearParam = userScoped ? '$3' : '$2';
+    const rows = await this.dataSource.query(
+      `SELECT EXTRACT(DAY FROM created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::int AS day,
+        modality, COUNT(*)::int AS cnt, COALESCE(SUM(charged_vnd), 0)::bigint AS cost
+       FROM ai_generations ${userClause}
+       ${userScoped ? 'AND' : 'WHERE'} status = 'succeeded'
+         AND EXTRACT(MONTH FROM created_at AT TIME ZONE 'Asia/Ho_Chi_Minh') = ${monthParam}
+         AND EXTRACT(YEAR FROM created_at AT TIME ZONE 'Asia/Ho_Chi_Minh') = ${yearParam}
+       GROUP BY 1, 2`,
+      params,
+    );
+    const map = new Map<string, { cnt: number; cost: number }>();
+    for (const row of rows) {
+      map.set(`${row.day}:${row.modality}`, {
+        cnt: Number(row.cnt),
+        cost: Number(row.cost),
+      });
     }
- 
-    // Merge motion vào bucket 'video'
-    for (const r of motionRows) {
-      const d = new Date(r.day).getDate()
-      map[d] ??= {}
-      const existing = map[d]['video'] ?? { cnt: 0, cost: 0 }
-      map[d]['video'] = {
-        cnt:  existing.cnt  + Number(r.cnt),
-        cost: existing.cost + Number(r.cost),
-      }
+    const generations: Array<{
+      day: number;
+      prompt: number;
+      images: number;
+      videos: number;
+      audio: number;
+    }> = [];
+    const spending: Array<{ day: number; total: number }> = [];
+    for (let day = 1; day <= new Date(year, month, 0).getDate(); day++) {
+      const chat = map.get(`${day}:chat`) ?? { cnt: 0, cost: 0 };
+      const image = map.get(`${day}:image`) ?? { cnt: 0, cost: 0 };
+      const video = map.get(`${day}:video`) ?? { cnt: 0, cost: 0 };
+      const audio = map.get(`${day}:audio`) ?? { cnt: 0, cost: 0 };
+      generations.push({
+        day,
+        prompt: chat.cnt,
+        images: image.cnt,
+        videos: video.cnt,
+        audio: audio.cnt,
+      });
+      spending.push({
+        day,
+        total: chat.cost + image.cost + video.cost + audio.cost,
+      });
     }
- 
-    const generations: { day: number; prompt: number; images: number; videos: number }[] = []
-    const spending:    { day: number; total: number }[] = []
- 
-    for (let d = 1; d <= daysInMonth; d++) {
-      const p = map[d]?.prompt ?? { cnt: 0, cost: 0 }
-      const i = map[d]?.image  ?? { cnt: 0, cost: 0 }
-      const v = map[d]?.video  ?? { cnt: 0, cost: 0 }
- 
-      generations.push({ day: d, prompt: p.cnt, images: i.cnt, videos: v.cnt })
-      spending.push({ day: d, total: p.cost + i.cost + v.cost })
-    }
- 
-    return { generations, spending }
+    return { generations, spending };
   }
 
   findById(id: number) {
-    return this.userRepository.findOne({ where: { id }, relations: ['role'] })
+    return this.userRepository.findOne({ where: { id }, relations: ['role'] });
   }
 
   findAll() {
     return this.userRepository.find({
-      select: { id: true, email: true, fullName: true, avatarUrl: true, phone: true, roleId: true, status: true, lastLoginAt: true, createdAt: true },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        avatarUrl: true,
+        phone: true,
+        roleId: true,
+        status: true,
+        lastLoginAt: true,
+        createdAt: true,
+      },
       relations: ['role'],
-    })
+    });
   }
 
   async findAllEmployees(page = 1, limit = 10, search?: string) {
-    const skip = (page - 1) * limit
-
     const qb = this.userRepository
       .createQueryBuilder('u')
-      .select(['u.id', 'u.email', 'u.fullName', 'u.avatarUrl', 'u.phone', 'u.roleId', 'u.username', 'u.status', 'u.lastLoginAt', 'u.createdAt'])
       .leftJoinAndSelect('u.role', 'role')
-      .where('u.roleId = :roleId', { roleId: 2 })
-
+      .where('u.roleId = :roleId', { roleId: 2 });
     if (search?.trim()) {
       qb.andWhere('(u.fullName ILIKE :search OR u.email ILIKE :search)', {
         search: `%${search.trim()}%`,
-      })
+      });
     }
-
     const [users, total] = await qb
       .orderBy('u.createdAt', 'DESC')
-      .skip(skip)
+      .skip((page - 1) * limit)
       .take(limit)
-      .getManyAndCount()
-
-    return { users, total, page, limit }
+      .getManyAndCount();
+    return { users, total, page, limit };
   }
 
   async getEmployeeStats() {
-    const TZ = 'Asia/Ho_Chi_Minh'
-    const now = new Date()
-    const month = now.getMonth() + 1
-    const year = now.getFullYear()
-
-    const [total, active, banned, spendingRows] = await Promise.all([
+    const now = new Date();
+    const [total, active, banned, rows] = await Promise.all([
       this.userRepository.count({ where: { roleId: 2 } }),
       this.userRepository.count({ where: { roleId: 2, status: 'active' } }),
       this.userRepository.count({ where: { roleId: 2, status: 'banned' } }),
       this.dataSource.query(
-        `SELECT COALESCE(
-          (SELECT SUM(pg.cost) FROM prompt_generations pg
-            JOIN projects p ON p.id = pg.project_id JOIN users u ON u.id = p.user_id
-            WHERE u.role_id = 2 AND pg.status = 'succeeded'
-              AND EXTRACT(MONTH FROM pg.created_at AT TIME ZONE $3) = $1
-              AND EXTRACT(YEAR  FROM pg.created_at AT TIME ZONE $3) = $2), 0
-        ) + COALESCE(
-          (SELECT SUM(ig.cost) FROM image_generations ig
-            JOIN projects p ON p.id = ig.project_id JOIN users u ON u.id = p.user_id
-            WHERE u.role_id = 2 AND ig.status = 'succeeded'
-              AND EXTRACT(MONTH FROM ig.created_at AT TIME ZONE $3) = $1
-              AND EXTRACT(YEAR  FROM ig.created_at AT TIME ZONE $3) = $2), 0
-        ) + COALESCE(
-          (SELECT SUM(vg.cost) FROM video_generations vg
-            JOIN projects p ON p.id = vg.project_id JOIN users u ON u.id = p.user_id
-            WHERE u.role_id = 2 AND vg.status = 'succeeded'
-              AND EXTRACT(MONTH FROM vg.created_at AT TIME ZONE $3) = $1
-              AND EXTRACT(YEAR  FROM vg.created_at AT TIME ZONE $3) = $2), 0
-        ) AS monthly_spending`,
-        [month, year, TZ],
+        `SELECT COALESCE(SUM(g.charged_vnd), 0)::bigint AS monthly_spending
+         FROM ai_generations g JOIN users u ON u.id = g.user_id
+         WHERE u.role_id = 2 AND g.status = 'succeeded'
+           AND EXTRACT(MONTH FROM g.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh') = $1
+           AND EXTRACT(YEAR FROM g.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh') = $2`,
+        [now.getMonth() + 1, now.getFullYear()],
       ),
-    ])
-
-    return { total, active, banned, monthlySpending: Number(spendingRows[0]?.monthly_spending ?? 0) }
+    ]);
+    return {
+      total,
+      active,
+      banned,
+      monthlySpending: Number(rows[0]?.monthly_spending ?? 0),
+    };
   }
 
   async toggleUserStatus(id: number) {
-    const user = await this.userRepository.findOne({ where: { id } })
-    if (!user) throw new NotFoundException('Không tìm thấy người dùng')
-
-    const newStatus = user.status === 'active' ? 'banned' : 'active'
-    await this.userRepository.update(id, { status: newStatus, updatedAt: new Date() })
-
-    return { id, status: newStatus }
+    const user = await this.requireUser(id);
+    const status = user.status === 'active' ? 'banned' : 'active';
+    await this.userRepository.update(id, { status, updatedAt: new Date() });
+    return { id, status };
   }
 
   async createEmployee(dto: CreateUserDto) {
-    const exists = await this.userRepository.findOne({ where: { email: dto.email } })
-    if (exists) throw new ConflictException('Email đã được sử dụng')
-
-    const passwordHash = await bcrypt.hash(dto.password, 10)
-    const user = this.userRepository.create({
-      roleId: 2, email: dto.email, fullName: dto.fullName,
-      phone: dto.phone, passwordHash, status: 'active',
-      createdAt: new Date(), updatedAt: new Date(),
-    })
-    const saved = await this.userRepository.save(user)
-
-    return { id: saved.id, email: saved.email, fullName: saved.fullName, phone: saved.phone, status: saved.status, createdAt: saved.createdAt }
+    if (await this.userRepository.findOne({ where: { email: dto.email } })) {
+      throw new ConflictException('Email đã được sử dụng');
+    }
+    const saved = await this.userRepository.save(
+      this.userRepository.create({
+        roleId: 2,
+        email: dto.email,
+        fullName: dto.fullName,
+        phone: dto.phone,
+        passwordHash: await bcrypt.hash(dto.password, 10),
+        status: 'active',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    );
+    return this.findEmployee(saved.id);
   }
 
-  // ─── MỚI: Lấy chi tiết nhân viên ────────────────────────────────────────────
   async findEmployee(id: number) {
-    const user = await this.userRepository.findOne({ where: { id }, relations: ['role'] })
-    if (!user) throw new NotFoundException('Không tìm thấy nhân viên')
-
-    return {
-      id:          user.id,
-      email:       user.email,
-      fullName:    user.fullName,
-      username:    user.username,
-      avatarUrl:   user.avatarUrl,
-      phone:       user.phone,
-      status:      user.status,
-      lastLoginAt: user.lastLoginAt,
-      createdAt:   user.createdAt,
-      updatedAt:   user.updatedAt,
-    }
+    const user = await this.requireUser(id);
+    const { passwordHash: _passwordHash, ...safeUser } = user;
+    return safeUser;
   }
 
-  // ─── MỚI: Cập nhật thông tin nhân viên ──────────────────────────────────────
-  async updateEmployee(id: number, dto: UpdateEmployeeDto, avatarBuffer?: Buffer) {
-    const user = await this.userRepository.findOne({ where: { id } })
-    if (!user) throw new NotFoundException('Không tìm thấy nhân viên')
-
-    // Kiểm tra username trùng (ngoại trừ chính user này)
-    if (dto.username && dto.username !== user.username) {
-      const existing = await this.userRepository.findOne({ where: { username: dto.username } })
-      if (existing && existing.id !== id) throw new ConflictException('Username đã được sử dụng')
-    }
-
-    // Upload avatar lên Cloudinary nếu có file mới
-    let avatarUrl = user.avatarUrl
+  async updateEmployee(
+    id: number,
+    dto: UpdateEmployeeDto,
+    avatarBuffer?: Buffer,
+  ) {
+    const user = await this.requireUser(id);
+    await this.ensureUsernameAvailable(dto.username, id);
+    let avatarUrl = user.avatarUrl;
     if (avatarBuffer) {
-      const result = await this.cloudinaryService.uploadBuffer(
-        avatarBuffer,
-        `avatar/users/${id}`,
-        'avatar',
-      )
-      avatarUrl = result.secure_url
+      avatarUrl = (
+        await this.cloudinaryService.uploadBuffer(
+          avatarBuffer,
+          `avatar/users/${id}`,
+          'avatar',
+        )
+      ).secure_url;
     }
-
     await this.userRepository.update(id, {
-      fullName:  dto.fullName  ?? user.fullName,
-      username:  dto.username  ?? user.username,
-      phone:     dto.phone     ?? user.phone,
+      fullName: dto.fullName ?? user.fullName,
+      username: dto.username ?? user.username,
+      phone: dto.phone ?? user.phone,
       avatarUrl,
       updatedAt: new Date(),
-    })
-
-    return this.findEmployee(id)
+    });
+    return this.findEmployee(id);
   }
 
-  // ─── MỚI: Reset mật khẩu về Bideptrai123@@ ──────────────────────────────────
   async resetPassword(id: number) {
-    const user = await this.userRepository.findOne({ where: { id } })
-    if (!user) throw new NotFoundException('Không tìm thấy nhân viên')
-
-    const passwordHash = await bcrypt.hash('Bideptrai123@@', 10)
-    await this.userRepository.update(id, { passwordHash, updatedAt: new Date() })
-
-    return { success: true, message: 'Reset mật khẩu thành công' }
+    await this.requireUser(id);
+    await this.userRepository.update(id, {
+      passwordHash: await bcrypt.hash('Bideptrai123@@', 10),
+      updatedAt: new Date(),
+    });
+    return { success: true, message: 'Reset mật khẩu thành công' };
   }
-
-  // async deleteEmployee(id: number) {
-  //   const user = await this.userRepository.findOne({ where: { id } })
-  //   if (!user) throw new NotFoundException('Không tìm thấy nhân viên')
-
-  //   await this.userRepository.delete(id)
-
-  //   return { success: true, message: 'Xóa nhân viên thành công' }
-  // }
 
   async deleteEmployee(id: number) {
-    const user = await this.userRepository.findOne({ where: { id } })
-    if (!user) throw new NotFoundException('Không tìm thấy nhân viên')
-
-    await this.dataSource.transaction(async (manager) => {
-      // video_generations tham chiếu assets (RESTRICT)
-      await manager.query(
-        `DELETE FROM video_generations
-        WHERE image_begin_asset_id IN (SELECT id FROM assets WHERE user_id = $1)
-            OR image_end_asset_id   IN (SELECT id FROM assets WHERE user_id = $1)`,
-        [id],
-      )
-
-      // motion_generations tham chiếu assets (RESTRICT)
-      await manager.query(
-        `DELETE FROM motion_generations
-        WHERE character_image_asset_id  IN (SELECT id FROM assets WHERE user_id = $1)
-            OR motion_reference_asset_id IN (SELECT id FROM assets WHERE user_id = $1)`,
-        [id],
-      )
-
-      // project_reference_images tham chiếu assets (RESTRICT) ← thêm mới
-      await manager.query(
-        `DELETE FROM project_reference_images
-        WHERE asset_id IN (SELECT id FROM assets WHERE user_id = $1)`,
-        [id],
-      )
-
-      // ai_element_images / ai_element_videos tham chiếu assets (RESTRICT)
-      await manager.query(
-        `DELETE FROM ai_element_images WHERE asset_id IN (SELECT id FROM assets WHERE user_id = $1)`,
-        [id],
-      )
-      await manager.query(
-        `DELETE FROM ai_element_videos WHERE asset_id IN (SELECT id FROM assets WHERE user_id = $1)`,
-        [id],
-      )
-
-      // Giờ mới xóa user — phần còn lại (projects, assets, ai_elements...) tự cascade
-      await manager.delete(User, id)
-    })
-
-    return { success: true, message: 'Xóa nhân viên thành công' }
+    await this.requireUser(id);
+    await this.userRepository.delete(id);
+    return { success: true, message: 'Xóa nhân viên thành công' };
   }
 
-  // ─── Cập nhật profile của chính mình ────────────────────────────────────────
-  async updateProfile(userId: number, dto: UpdateEmployeeDto, avatarBuffer?: Buffer) {
-    const user = await this.userRepository.findOne({ where: { id: userId } })
-    if (!user) throw new NotFoundException('Không tìm thấy người dùng')
+  async updateProfile(
+    userId: number,
+    dto: UpdateEmployeeDto,
+    avatarBuffer?: Buffer,
+  ) {
+    await this.updateEmployee(userId, dto, avatarBuffer);
+    return this.findMe(userId);
+  }
 
-    if (dto.username && dto.username !== user.username) {
-      const existing = await this.userRepository.findOne({ where: { username: dto.username } })
-      if (existing && existing.id !== userId)
-        throw new ConflictException('Username đã được sử dụng')
+  async changePassword(
+    userId: number,
+    currentPassword: string,
+    newPassword: string,
+  ) {
+    const user = await this.requireUser(userId);
+    if (!(await bcrypt.compare(currentPassword, user.passwordHash))) {
+      throw new UnauthorizedException('Mật khẩu hiện tại không đúng');
     }
-
-    let avatarUrl = user.avatarUrl
-    if (avatarBuffer) {
-      const result = await this.cloudinaryService.uploadBuffer(
-        avatarBuffer, `avatar/users/${userId}`, 'avatar',
-      )
-      avatarUrl = result.secure_url
-    }
-
     await this.userRepository.update(userId, {
-      fullName:  dto.fullName  ?? user.fullName,
-      username:  dto.username  ?? user.username,
-      phone:     dto.phone     ?? user.phone,
-      avatarUrl,
+      passwordHash: await bcrypt.hash(newPassword, 10),
       updatedAt: new Date(),
-    })
-
-    return this.findMe(userId)
+    });
+    return { success: true, message: 'Đổi mật khẩu thành công' };
   }
 
-  // ─── Đổi mật khẩu của chính mình ────────────────────────────────────────────
-  async changePassword(userId: number, currentPassword: string, newPassword: string) {
-    const user = await this.userRepository.findOne({ where: { id: userId } })
-    if (!user) throw new NotFoundException('Không tìm thấy người dùng')
+  private async requireUser(id: number) {
+    const user = await this.userRepository.findOne({
+      where: { id },
+      relations: ['role'],
+    });
+    if (!user) throw new NotFoundException('Không tìm thấy người dùng');
+    return user;
+  }
 
-    const isValid = await bcrypt.compare(currentPassword, user.passwordHash)
-    if (!isValid) throw new UnauthorizedException('Mật khẩu hiện tại không đúng')
-
-    const passwordHash = await bcrypt.hash(newPassword, 10)
-    await this.userRepository.update(userId, { passwordHash, updatedAt: new Date() })
-
-    return { success: true, message: 'Đổi mật khẩu thành công' }
+  private async ensureUsernameAvailable(
+    username: string | undefined,
+    userId: number,
+  ) {
+    if (!username) return;
+    const existing = await this.userRepository.findOne({ where: { username } });
+    if (existing && Number(existing.id) !== Number(userId)) {
+      throw new ConflictException('Username đã được sử dụng');
+    }
   }
 }
