@@ -47,18 +47,71 @@ export class PricingService {
     const check = (value: any, allowed: any[], label: string) => {
       if (
         value != null &&
-        allowed?.length &&
-        !allowed.map(String).includes(String(value))
+        value !== '' &&
+        (!allowed?.length || !allowed.map(String).includes(String(value)))
       ) {
         throw new BadRequestException(`${label} không được model hỗ trợ`);
       }
     };
+    const checkImage = (
+      optionKey: string,
+      capabilityKey: string,
+      label: string,
+    ) => {
+      const value = options[optionKey];
+      if (value == null || value === '') return;
+      const capability = caps[capabilityKey];
+      if (!capability) {
+        throw new BadRequestException(`${label} không được model hỗ trợ`);
+      }
+      if (Array.isArray(capability.values)) {
+        check(value, capability.values, label);
+      }
+      if (capability.type === 'range') {
+        const numeric = Number(value);
+        if (
+          !Number.isFinite(numeric) ||
+          (['n', 'seed'].includes(optionKey) && !Number.isInteger(numeric)) ||
+          (capability.min != null && numeric < Number(capability.min)) ||
+          (capability.max != null && numeric > Number(capability.max))
+        ) {
+          throw new BadRequestException(`${label} không được model hỗ trợ`);
+        }
+      }
+    };
+    if (modality === 'image') {
+      checkImage('aspectRatio', 'aspect_ratio', 'Tỷ lệ');
+      checkImage('resolution', 'resolution', 'Độ phân giải');
+      checkImage('size', 'size', 'Kích thước');
+      checkImage('quality', 'quality', 'Chất lượng');
+      checkImage('outputFormat', 'output_format', 'Định dạng');
+      checkImage('background', 'background', 'Nền');
+      checkImage('outputCompression', 'output_compression', 'Độ nén');
+      checkImage('n', 'n', 'Số lượng');
+      checkImage('seed', 'seed', 'Seed');
+    }
     if (modality === 'video') {
       check(options.resolution, caps.resolutions, 'Độ phân giải');
       check(options.aspectRatio, caps.aspectRatios, 'Tỷ lệ');
+      check(options.size, caps.sizes, 'Kích thước');
       check(options.duration, caps.durations, 'Thời lượng');
-      if (options.generateAudio && !caps.generateAudio) {
+      if (options.size && (options.resolution || options.aspectRatio)) {
+        throw new BadRequestException(
+          'Kích thước không dùng cùng tỷ lệ hoặc độ phân giải',
+        );
+      }
+      if (options.generateAudio != null && !caps.generateAudio) {
         throw new BadRequestException('Model không hỗ trợ tạo âm thanh');
+      }
+      if (options.seed != null && options.seed !== '' && !caps.seed) {
+        throw new BadRequestException('Model không hỗ trợ seed');
+      }
+      if (
+        options.seed != null &&
+        options.seed !== '' &&
+        !Number.isInteger(Number(options.seed))
+      ) {
+        throw new BadRequestException('Seed phải là số nguyên');
       }
     }
     if (modality === 'audio' && options.voice && model.voices?.length) {

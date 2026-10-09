@@ -18,6 +18,7 @@ import { AiGeneration } from './entities/ai-generation.entity';
 import { AiGenerationAsset } from './entities/ai-generation-asset.entity';
 import { PricingQuote } from './entities/pricing-quote.entity';
 import { OpenRouterService } from './openrouter.service';
+import { CatalogService } from './catalog.service';
 import { PricingService } from './pricing.service';
 
 interface CreateGenerationBody {
@@ -42,6 +43,7 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
     private readonly quotes: Repository<PricingQuote>,
     @InjectRepository(Asset) private readonly assets: Repository<Asset>,
     private readonly pricing: PricingService,
+    private readonly catalog: CatalogService,
     private readonly wallets: WalletService,
     private readonly openRouter: OpenRouterService,
     private readonly cloudinary: CloudinaryService,
@@ -185,13 +187,42 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
     );
     if (quote.modality === 'chat')
       throw new BadRequestException('Dùng API chat cho báo giá chat');
+    const catalogModel = await this.catalog.find(
+      quote.modality,
+      quote.modelSlug,
+    );
+    const referenceLimit =
+      quote.modality === 'image'
+        ? Math.max(
+            0,
+            Number(catalogModel.capabilities?.input_references?.max) || 0,
+          )
+        : quote.modality === 'video'
+          ? Math.min(
+              2,
+              new Set(catalogModel.capabilities?.frameImages || []).size,
+            )
+          : 0;
     const referenceAssetIds = Array.from(
       new Set(
         (body.referenceAssetIds || [])
           .map(Number)
           .filter((id) => Number.isSafeInteger(id) && id > 0),
       ),
-    ).slice(0, 2);
+    );
+    const referenceUrls = Array.from(
+      new Set(
+        (body.referenceUrls || []).filter((url) => typeof url === 'string'),
+      ),
+    );
+    const suppliedReferenceCount = referenceAssetIds.length
+      ? referenceAssetIds.length
+      : referenceUrls.length;
+    if (suppliedReferenceCount > referenceLimit) {
+      throw new BadRequestException(
+        `Model chỉ hỗ trợ tối đa ${referenceLimit} ảnh tham chiếu`,
+      );
+    }
     const referenceAssets = referenceAssetIds.length
       ? await this.assets.find({
           where: { id: In(referenceAssetIds), userId },
@@ -220,7 +251,7 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
       ...(quote.request?.options || {}),
       referenceUrls: orderedReferences.length
         ? orderedReferences.map((asset) => asset.storedUrl)
-        : (body.referenceUrls || []).slice(0, 2),
+        : referenceUrls,
     };
     let generation = await this.generations.save(
       this.generations.create({
@@ -258,11 +289,11 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
 
     try {
       if (quote.modality === 'image')
-        generation = await this.createImage(generation, quote);
+        generation = await this.createImage(generation, quote, catalogModel);
       if (quote.modality === 'audio')
         generation = await this.createAudio(generation, quote);
       if (quote.modality === 'video')
-        generation = await this.createVideo(generation);
+        generation = await this.createVideo(generation, catalogModel);
       const hydrated = await this.generations.findOneOrFail({
         where: { id: generation.id },
         relations: { model: true, linkedAssets: { asset: true } },
@@ -281,7 +312,11 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async createImage(generation: AiGeneration, quote: PricingQuote) {
+  private async createImage(
+    generation: AiGeneration,
+    quote: PricingQuote,
+    model: any,
+  ) {
     const opts = generation.options || {};
     const request: Record<string, any> = {
       model: generation.modelSlug,
@@ -299,10 +334,14 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
       seed: 'seed',
     };
     for (const [source, target] of Object.entries(mapping)) {
-      if (opts[source] != null && opts[source] !== '')
+      if (
+        model.capabilities?.[target] &&
+        opts[source] != null &&
+        opts[source] !== ''
+      )
         request[target] = opts[source];
     }
-    if (opts.referenceUrls?.length) {
+    if (model.capabilities?.input_references && opts.referenceUrls?.length) {
       request.input_references = opts.referenceUrls.map((url: string) => ({
         image_url: { url },
       }));
@@ -393,7 +432,7 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
     return generation;
   }
 
-  private async createVideo(generation: AiGeneration) {
+  private async createVideo(generation: AiGeneration, model: any) {
     const opts = generation.options || {};
     const request: Record<string, any> = {
       model: generation.modelSlug,
@@ -402,17 +441,25 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
     if (opts.duration != null) request.duration = Number(opts.duration);
     if (opts.resolution) request.resolution = opts.resolution;
     if (opts.aspectRatio) request.aspect_ratio = opts.aspectRatio;
-    if (opts.generateAudio != null)
+    if (opts.size) request.size = opts.size;
+    if (model.capabilities?.generateAudio && opts.generateAudio != null)
       request.generate_audio = !!opts.generateAudio;
-    if (opts.seed != null) request.seed = Number(opts.seed);
+    if (model.capabilities?.seed && opts.seed != null && opts.seed !== '')
+      request.seed = Number(opts.seed);
     const references = opts.referenceUrls || [];
     if (references.length) {
+      const supportedFrameTypes = new Set(
+        model.capabilities?.frameImages || [],
+      );
+      const frameTypes = ['first_frame', 'last_frame'].filter((frameType) =>
+        supportedFrameTypes.has(frameType),
+      );
       request.frame_images = references
-        .slice(0, 2)
+        .slice(0, frameTypes.length)
         .map((url: string, index: number) => ({
           type: 'image_url',
           image_url: { url },
-          frame_type: index === 0 ? 'first_frame' : 'last_frame',
+          frame_type: frameTypes[index],
         }));
     }
     const callbackUrl = this.config.get<string>('OPENROUTER_VIDEO_WEBHOOK_URL');
@@ -570,7 +617,9 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
   response(item: AiGeneration) {
     const linkedAssets = item.linkedAssets || [];
     const linkedInputAssets = linkedAssets
-      .filter((link) => ['input', 'reference'].includes(link.role) && link.asset)
+      .filter(
+        (link) => ['input', 'reference'].includes(link.role) && link.asset,
+      )
       .map((link) => ({
         id: Number(link.asset.id),
         role: link.role,
@@ -580,13 +629,15 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
       }));
     const inputAssets = linkedInputAssets.length
       ? linkedInputAssets
-      : (item.options?.referenceUrls || []).map((url: string, index: number) => ({
-          id: null,
-          role: index === 0 ? 'input' : 'reference',
-          type: 'image',
-          url,
-          thumbnailUrl: null,
-        }));
+      : (item.options?.referenceUrls || []).map(
+          (url: string, index: number) => ({
+            id: null,
+            role: index === 0 ? 'input' : 'reference',
+            type: 'image',
+            url,
+            thumbnailUrl: null,
+          }),
+        );
     const outputAsset = linkedAssets.find(
       (link) => link.role === 'output' && link.asset,
     )?.asset;
@@ -607,12 +658,17 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
       outputUrls: item.outputUrls || [],
       thumbnailUrl:
         outputAsset?.thumbnailUrl ||
-        String((outputAsset?.metadata as Record<string, any>)?.thumbnailUrl || '') ||
+        String(
+          (outputAsset?.metadata as Record<string, any>)?.thumbnailUrl || '',
+        ) ||
         inputAssets[0]?.thumbnailUrl ||
         inputAssets[0]?.url ||
         (item.modality === 'image' ? item.outputUrls?.[0] : null),
       displayQuality:
-        item.options?.resolution || item.options?.quality || item.options?.mode || null,
+        item.options?.resolution ||
+        item.options?.quality ||
+        item.options?.mode ||
+        null,
       displayPriceVnd,
       usage: item.usage || {},
       estimatedMinVnd: Number(item.estimatedMinVnd),

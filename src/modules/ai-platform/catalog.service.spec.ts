@@ -28,6 +28,12 @@ describe('CatalogService', () => {
           {
             id: 'bytedance-seed/seedream-5-0-pro',
             name: 'ByteDance Seed: Seedream 5.0 Pro',
+            supported_parameters: {
+              resolution: { type: 'enum', values: ['1K', '2K'] },
+              input_references: { type: 'range', min: 0, max: 14 },
+              n: { type: 'range', min: 1, max: 1 },
+              seed: { type: 'boolean' },
+            },
           },
           {
             id: 'openai/gpt-image-2',
@@ -103,6 +109,12 @@ describe('CatalogService', () => {
     expect(
       result.some((model) => model.id === 'black-forest-labs/flux.3-image'),
     ).toBe(false);
+    expect(result[0].capabilities.input_references.max).toBe(14);
+    expect(result[0].capabilities.n).toEqual({
+      type: 'range',
+      min: 1,
+      max: 1,
+    });
   });
 
   it('rejects an image model outside the allowlist', async () => {
