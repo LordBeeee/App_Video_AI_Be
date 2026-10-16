@@ -5,7 +5,7 @@ jest.mock('axios');
 
 describe('KlingService', () => {
   const request = axios.request as jest.Mock;
-  const service = new KlingService({ get: () => 'test-key' } as never);
+  const service = new KlingService({ get: () => 'test-key' } as never, {} as never);
 
   beforeEach(() => request.mockReset());
 
@@ -84,5 +84,68 @@ describe('KlingService', () => {
       status: 'succeeded',
       url: 'https://example.com/result.mp4',
     });
+  });
+});
+
+describe('Kling element creation', () => {
+  const request = axios.request as jest.Mock;
+  const repo = {
+    find: jest.fn(),
+    findOne: jest.fn(),
+    create: jest.fn((value) => value),
+    save: jest.fn(async (value) => value),
+  };
+  const service = new KlingService({ get: () => 'test-key' } as never, repo as never);
+
+  beforeEach(() => { request.mockReset(); repo.find.mockReset(); repo.findOne.mockReset(); repo.save.mockClear(); });
+
+  it('sends ordered owned images using the Kling Element API', async () => {
+    repo.find.mockResolvedValue([
+      { id: 1, userId: 7, assetType: 'image', storedUrl: 'https://example.com/front.png' },
+      { id: 2, userId: 7, assetType: 'image', storedUrl: 'https://example.com/side.png' },
+    ]);
+    request.mockResolvedValue({ data: { code: 0, data: { task_id: 'element-task', task_status: 'submitted' } } });
+    await service.createElement(7, { name: 'Cat', description: 'Mascot', referenceType: 'image', mainAssetId: 1, additionalAssetIds: [2] });
+    const call = request.mock.calls[0][0];
+    expect(call.url).toBe('https://api-singapore.klingai.com/v1/general/advanced-custom-elements');
+    expect(call.data.element_image_list).toEqual({ frontal_image: 'https://example.com/front.png', refer_images: [{ image_url: 'https://example.com/side.png' }] });
+    expect(repo.save).toHaveBeenCalledWith(expect.objectContaining({ userId: 7, sourceType: 'reference' }));
+  });
+
+  it('rejects references that do not belong to the user', async () => {
+    repo.find.mockResolvedValue([{ id: 1, userId: 7, assetType: 'image', storedUrl: 'https://example.com/front.png' }]);
+    await expect(service.createElement(7, { name: 'Cat', description: 'Mascot', mainAssetId: 1, additionalAssetIds: [2] })).rejects.toThrow('Tài nguyên tham chiếu không hợp lệ');
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('creates a custom voice from a user-owned audio sample', async () => {
+    repo.findOne.mockResolvedValue({ id: 3, userId: 7, assetType: 'audio', mimeType: 'audio/mpeg', storedUrl: 'https://example.com/voice.mp3', durationSeconds: 12 });
+    request.mockResolvedValue({ data: { code: 0, data: { task_id: 'voice-task', task_status: 'submitted' } } });
+    await service.createVoice(7, { name: 'MC Voice', sampleAssetId: 3 });
+    expect(request.mock.calls[0][0]).toMatchObject({
+      url: 'https://api-singapore.klingai.com/v1/general/custom-voices',
+      data: { voice_name: 'MC Voice', voice_url: 'https://example.com/voice.mp3' },
+    });
+    expect(repo.save).toHaveBeenCalledWith(expect.objectContaining({ userId: 7, assetRole: 'voice', sourceType: 'reference' }));
+  });
+
+  it('does not submit a voice using another user’s sample', async () => {
+    repo.findOne.mockResolvedValue(null);
+    await expect(service.createVoice(7, { name: 'MC Voice', sampleAssetId: 3 })).rejects.toThrow('Mẫu giọng');
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('rejects a voice sample shorter than five seconds', async () => {
+    repo.findOne.mockResolvedValue({ id: 3, userId: 7, assetType: 'audio', mimeType: 'audio/mpeg', metadata: { mediaDurationSeconds: 4.8 } });
+    await expect(service.createVoice(7, { name: 'MC Voice', sampleAssetId: 3 })).rejects.toThrow('5–30 giây');
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('updates a completed voice reference with the Kling Voice ID', async () => {
+    const voice = { id: 9, assetRole: 'voice', metadata: { taskId: 'voice-task', status: 'processing' } };
+    repo.find.mockResolvedValue([voice]);
+    request.mockResolvedValue({ data: { code: 0, data: { task_status: 'succeed', task_result: { voices: [{ voice_id: 'voice-123', trial_url: 'https://example.com/preview.mp3' }] } } } });
+    const result = await service.listReferences(7);
+    expect(result.items[0].metadata).toMatchObject({ status: 'succeed', voiceId: 'voice-123', trialUrl: 'https://example.com/preview.mp3' });
   });
 });

@@ -445,7 +445,7 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
     const providerGenerationId = String(
       response.headers['x-generation-id'] || '',
     );
-    const url = await this.cloudinary.uploadAudioBuffer(
+    const { secureUrl: url } = await this.cloudinary.uploadAudioBuffer(
       Buffer.from(response.data),
       `ai-generation/users/${generation.userId}/audio`,
       generation.id,

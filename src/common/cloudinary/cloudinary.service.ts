@@ -66,13 +66,13 @@ export class CloudinaryService {
     buffer: Buffer,
     folder: string,
     publicId: string,
-  ): Promise<string> {
+  ): Promise<{ secureUrl: string; durationSeconds: number | null }> {
     return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         { folder, public_id: publicId, resource_type: 'video', format: 'mp3' },
         (error, result) => {
           if (error) return reject(error);
-          resolve(result!.secure_url);
+          resolve({ secureUrl: result!.secure_url, durationSeconds: result!.duration ?? null });
         },
       );
       streamifier.createReadStream(buffer).pipe(uploadStream);

@@ -21,6 +21,7 @@ import { OpenRouterService } from './openrouter.service';
 import { KlingService } from './kling.service';
 import { PricingController } from './pricing.controller';
 import { PricingService } from './pricing.service';
+import { ReferencesController } from './references.controller';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { PricingService } from './pricing.service';
     PricingController,
     GenerationsController,
     ChatController,
+    ReferencesController,
   ],
   providers: [
     OpenRouterService,

@@ -38,6 +38,9 @@ export class AssetsService {
     if (isImage && file.size > MAX_IMAGE_UPLOAD_BYTES) {
       throw new BadRequestException('Ảnh tải lên không được vượt quá 10 MB');
     }
+    if (isVideo && file.size > 200_000_000) {
+      throw new BadRequestException('Video tải lên không được vượt quá 200 MB');
+    }
 
     const assetType = isVideo ? 'video' : isAudio ? 'audio' : 'image';
     const folder = `ai-generation/users/${userId}/library/${assetType}`;
@@ -50,12 +53,12 @@ export class AssetsService {
         publicId,
       );
     } else if (isAudio) {
-      const secureUrl = await this.cloudinaryService.uploadAudioBuffer(
+      const audio = await this.cloudinaryService.uploadAudioBuffer(
         file.buffer,
         folder,
         publicId,
       );
-      result = { secure_url: secureUrl };
+      result = { secure_url: audio.secureUrl, duration: audio.durationSeconds };
     } else {
       result = await this.cloudinaryService.uploadBuffer(
         file.buffer,
@@ -83,7 +86,7 @@ export class AssetsService {
         height: result.height ?? null,
         thumbnailUrl: result.thumbnail_url ?? null,
         isFavorite: false,
-        metadata: {},
+        metadata: { mediaDurationSeconds: result.duration ?? null },
       }),
     );
   }
