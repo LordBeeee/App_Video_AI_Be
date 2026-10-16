@@ -15,6 +15,7 @@ const TAB_TO_SOURCE_TYPE: Record<string, string> = {
   creative: 'generated',
   upload: 'uploaded',
 };
+const MAX_IMAGE_UPLOAD_BYTES = 10_000_000;
 
 @Injectable()
 export class AssetsService {
@@ -33,6 +34,9 @@ export class AssetsService {
     const isAudio = file.mimetype.startsWith('audio/');
     if (!isVideo && !isImage && !isAudio) {
       throw new BadRequestException('Chỉ hỗ trợ upload ảnh, video hoặc audio');
+    }
+    if (isImage && file.size > MAX_IMAGE_UPLOAD_BYTES) {
+      throw new BadRequestException('Ảnh tải lên không được vượt quá 10 MB');
     }
 
     const assetType = isVideo ? 'video' : isAudio ? 'audio' : 'image';

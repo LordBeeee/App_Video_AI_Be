@@ -218,7 +218,7 @@ export class PricingService {
       throw new BadRequestException('Loại nội dung không hợp lệ');
     }
     if (!request.modelSlug) throw new BadRequestException('Model là bắt buộc');
-    const prompt = String(request.prompt || '');
+    const prompt = String(request.prompt || '').trim();
     const options = request.options || {};
     const model = await this.catalog.find(request.modality, request.modelSlug);
     this.validateOptions(request.modality, model, options);

@@ -97,4 +97,29 @@ describe('PricingService option validation', () => {
       (priced as any).videoCost(KLING_VIDEO_MODELS[3], { duration: 5, resolution: '720p' }),
     ).toBe(0);
   });
+
+  it('accepts a quote when generation trims surrounding prompt whitespace', async () => {
+    let savedQuote: any;
+    const quotes = {
+      create: (value: any) => ({ ...value, id: 'quote-1' }),
+      save: async (value: any) => { savedQuote = value; },
+      findOne: async () => savedQuote,
+    };
+    const pricing = new PricingService(
+      quotes as never,
+      { find: async () => KLING_VIDEO_MODELS[0] } as never,
+      { getUsdVndRate: async () => ({ rate: 25_000, source: 'test' }) } as never,
+      { get: (key: string) => key === 'KLING_USD_PER_API_UNIT' ? '0.14' : '0' } as never,
+    );
+
+    await pricing.createQuote(1, {
+      modality: 'video',
+      modelSlug: KLING_VIDEO_MODELS[0].id,
+      prompt: '  move forward  ',
+      options: { duration: 5, resolution: '720p' },
+    });
+
+    expect(savedQuote.request.promptLength).toBe('move forward'.length);
+    await expect(pricing.getValidQuote(1, 'quote-1', 'move forward')).resolves.toBe(savedQuote);
+  });
 });
