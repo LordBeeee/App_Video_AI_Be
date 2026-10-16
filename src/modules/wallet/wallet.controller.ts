@@ -1,3 +1,7 @@
+import {
+  CurrentUser,
+  type AuthenticatedUser,
+} from '../auth/decorators/current-user.decorator';
 import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -14,38 +18,41 @@ export class WalletController {
   ) {}
 
   @Get()
-  summary(@Req() req: any) {
-    return this.wallets.summary(req.user.id);
+  summary(@CurrentUser() user: AuthenticatedUser) {
+    return this.wallets.summary(user.id);
   }
 
   @Get('transactions')
-  transactions(@Req() req: any) {
-    return this.wallets.history(req.user.id);
+  transactions(@CurrentUser() user: AuthenticatedUser) {
+    return this.wallets.history(user.id);
   }
 
   @Get('topups')
-  topups(@Req() req: any) {
-    return this.payos.history(req.user.id);
+  topups(@CurrentUser() user: AuthenticatedUser) {
+    return this.payos.history(user.id);
   }
 
   @Post('topups')
-  createTopup(@Req() req: any, @Body('amountVnd') amountVnd: number) {
-    return this.payos.createTopup(req.user.id, Number(amountVnd));
+  createTopup(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body('amountVnd') amountVnd: number,
+  ) {
+    return this.payos.createTopup(user.id, Number(amountVnd));
   }
 
   @Post('admin/adjust')
   @UseGuards(RolesGuard)
   @Roles(1)
   adjust(
-    @Req() req: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() body: { userId: number; amountVnd: number; note?: string },
   ) {
     return this.wallets.credit(
       Number(body.userId),
       Number(body.amountVnd),
-      `admin:${req.user.id}:${Date.now()}`,
+      `admin:${user.id}:${Date.now()}`,
       'adjustment',
-      { note: body.note, adminUserId: req.user.id },
+      { note: body.note, adminUserId: user.id },
     );
   }
 }

@@ -9,7 +9,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { AiGenerationAsset } from './ai-generation-asset.entity';
-import { AiModel } from './ai-model.entity';
+import { AiModel } from '../catalog/ai-model.entity';
 
 @Entity({ name: 'ai_generations', schema: 'public' })
 export class AiGeneration {

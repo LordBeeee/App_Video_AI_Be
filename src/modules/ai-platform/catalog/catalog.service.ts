@@ -8,8 +8,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { AiModel } from './entities/ai-model.entity';
-import { OpenRouterService } from './openrouter.service';
+import { AiModel } from './ai-model.entity';
+import { OpenRouterService } from '../openrouter.service';
 import { KLING_VIDEO_MODELS } from './kling-video';
 
 export type AiModality = 'image' | 'video' | 'audio' | 'chat';

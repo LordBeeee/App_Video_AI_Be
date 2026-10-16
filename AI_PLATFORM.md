@@ -3,7 +3,8 @@
 ## Khởi tạo
 
 1. Sao chép các biến mới trong `.env.example` vào file môi trường đang dùng và điền khóa OpenRouter (ảnh/audio/chat), Kling (video), Cloudinary và payOS.
-2. Chạy `migrations/202610070001_ai_platform.sql` trên PostgreSQL trước khi khởi động ứng dụng. Dự án tiếp tục giữ `synchronize: false`.
+2. Với database trống, chạy `npm run db:setup` như hướng dẫn trong README. Với database của phiên bản cũ, làm theo [hướng dẫn nâng cấp](docs/database.md) và chạy `migrations/202610070001_ai_platform.sql`; không chạy migration cũ trên database trống. Dự án tiếp tục giữ `synchronize: false`.
+   Chỉ với database cũ, chạy tiếp `migrations/202610160001_reference_assets.sql` để cho phép `assets.source_type = 'reference'`. Database tạo mới đã có giá trị này.
 3. Video Kling được đối soát qua polling hiện có; cần `KLING_API_KEY` từ [Kling Developer Console](https://kling.ai/dev/api-key).
 4. Cấu hình webhook payOS trỏ tới `POST /payments/payos/webhook`. `PAYOS_RETURN_URL` chỉ dùng để đưa người dùng trở lại trang ví; việc cộng tiền chỉ xảy ra sau khi chữ ký webhook hợp lệ.
 

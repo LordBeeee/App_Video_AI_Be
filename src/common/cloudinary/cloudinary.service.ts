@@ -72,7 +72,10 @@ export class CloudinaryService {
         { folder, public_id: publicId, resource_type: 'video', format: 'mp3' },
         (error, result) => {
           if (error) return reject(error);
-          resolve({ secureUrl: result!.secure_url, durationSeconds: result!.duration ?? null });
+          resolve({
+            secureUrl: result!.secure_url,
+            durationSeconds: result!.duration ?? null,
+          });
         },
       );
       streamifier.createReadStream(buffer).pipe(uploadStream);

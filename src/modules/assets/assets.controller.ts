@@ -1,6 +1,19 @@
 import {
-  Controller, Get, Post, Patch, Param, Query, Body, Req,
-  UseGuards, UseInterceptors, UploadedFile, BadRequestException,
+  CurrentUser,
+  type AuthenticatedUser,
+} from '../auth/decorators/current-user.decorator';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Param,
+  Query,
+  Body,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
@@ -14,31 +27,34 @@ export class AssetsController {
 
   @Post('upload')
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
-  async upload(@Req() req: any, @UploadedFile() file: Express.Multer.File) {
+  async upload(
+    @CurrentUser() user: AuthenticatedUser,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
     if (!file) throw new BadRequestException('File là bắt buộc');
-    return this.assetsService.uploadToLibrary(req.user.id, file);
+    return this.assetsService.uploadToLibrary(user.id, file);
   }
 
-    @Get()
-    findLibrary(
-    @Req() req: any,
+  @Get()
+  findLibrary(
+    @CurrentUser() user: AuthenticatedUser,
     @Query('tab') tab: 'creative' | 'upload' = 'creative',
     @Query('type') type: 'all' | 'image' | 'video' | 'audio' = 'all',
     @Query('favorite') favorite?: string,
-    ) {
-    return this.assetsService.findLibrary(req.user.id, {
-        tab,
-        type,
-        favoritesOnly: favorite === 'true',
+  ) {
+    return this.assetsService.findLibrary(user.id, {
+      tab,
+      type,
+      favoritesOnly: favorite === 'true',
     });
-    }
+  }
 
   @Patch(':id/favorite')
   toggleFavorite(
-    @Req() req: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
     @Body('isFavorite') isFavorite: boolean,
   ) {
-    return this.assetsService.setFavorite(req.user.id, +id, !!isFavorite);
+    return this.assetsService.setFavorite(user.id, +id, !!isFavorite);
   }
 }

@@ -51,8 +51,8 @@ export class AuthService {
     // Set httpOnly cookie — JS không đọc được
     const cookieOptions = {
       httpOnly: true,
-      secure: true,        
-      sameSite: 'none' as const,
+      secure: isProduction,
+      sameSite: isProduction ? ('none' as const) : ('lax' as const),
     };
 
     res.cookie('access_token', accessToken, {
@@ -96,10 +96,11 @@ export class AuthService {
         { expiresIn: '15m' },
       );
 
+      const isProduction = this.configService.get('NODE_ENV') === 'production';
       res.cookie('access_token', newAccessToken, {
         httpOnly: true,
-        secure: true,
-        sameSite: 'none',
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
         maxAge: 15 * 60 * 1000,
       });
 
@@ -110,8 +111,14 @@ export class AuthService {
   }
 
   logout(res: Response) {
-    res.clearCookie('access_token');
-    res.clearCookie('refresh_token');
+    const isProduction = this.configService.get('NODE_ENV') === 'production';
+    const options = {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? ('none' as const) : ('lax' as const),
+    };
+    res.clearCookie('access_token', options);
+    res.clearCookie('refresh_token', options);
     return { message: 'Đăng xuất thành công' };
   }
 }

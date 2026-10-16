@@ -3,9 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash } from 'crypto';
 import { Repository } from 'typeorm';
-import { CatalogService, AiModality } from './catalog.service';
+import { CatalogService, AiModality } from '../catalog/catalog.service';
 import { FxService } from './fx.service';
-import { PricingQuote } from './entities/pricing-quote.entity';
+import { PricingQuote } from './pricing-quote.entity';
 import {
   calculateRetailVnd,
   estimateChatTokens,
@@ -152,13 +152,23 @@ export class PricingService {
         options.resolution || model.capabilities.resolutions[0],
       );
       const duration = Number(
-        options.duration || (model.capabilities.durations.includes(5) ? 5 : model.capabilities.durations[0]),
+        options.duration ||
+          (model.capabilities.durations.includes(5)
+            ? 5
+            : model.capabilities.durations[0]),
       );
       const rate = model.pricing.perSecond[resolution];
-      const unitsPerSecond = Number(rate?.[model.capabilities.nativeAudioIncluded
-        ? 'includedAudio'
-        : options.generateAudio ? 'withAudio' : 'noAudio']);
-      if (!Number.isFinite(unitsPerSecond) || !Number.isFinite(duration)) return 0;
+      const unitsPerSecond = Number(
+        rate?.[
+          model.capabilities.nativeAudioIncluded
+            ? 'includedAudio'
+            : options.generateAudio
+              ? 'withAudio'
+              : 'noAudio'
+        ],
+      );
+      if (!Number.isFinite(unitsPerSecond) || !Number.isFinite(duration))
+        return 0;
       const usdPerUnit = Number(
         this.config.get<string>('KLING_USD_PER_API_UNIT') || 0.14,
       );
@@ -253,7 +263,8 @@ export class PricingService {
     }
     if (!(maxUsd > 0)) {
       throw new BadRequestException(
-        model.provider === 'kling' && model.pricing?.unitType === 'unpublished_api_rate'
+        model.provider === 'kling' &&
+          model.pricing?.unitType === 'unpublished_api_rate'
           ? 'Kling O1 chưa có giá API công khai để báo giá và tạo tác vụ'
           : 'Model chưa có dữ liệu giá phù hợp với lựa chọn này',
       );
@@ -262,8 +273,8 @@ export class PricingService {
     const fx = await this.fx.getUsdVndRate();
     const markupRate = Number(
       request.modality === 'video' && model.provider === 'kling'
-        ? this.config.get<string>('KLING_VIDEO_MARKUP_RATE') ?? '0'
-        : this.config.get<string>('AI_MARKUP_RATE') ?? '0.20',
+        ? (this.config.get<string>('KLING_VIDEO_MARKUP_RATE') ?? '0')
+        : (this.config.get<string>('AI_MARKUP_RATE') ?? '0.20'),
     );
     const minPriceVnd = calculateRetailVnd(minUsd, fx.rate, markupRate);
     const maxPriceVnd = calculateRetailVnd(maxUsd, fx.rate, markupRate);
@@ -281,8 +292,7 @@ export class PricingService {
         ...(request.modality === 'video' && model.provider === 'kling'
           ? {
               priceBasis: model.pricing.unitType,
-              priceSource:
-                'https://kling.ai/dev/pricing',
+              priceSource: 'https://kling.ai/dev/pricing',
             }
           : {}),
         fxSource: fx.source,

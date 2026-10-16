@@ -7,13 +7,13 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Response } from 'express';
 import { Repository } from 'typeorm';
-import { WalletService } from '../wallet/wallet.service';
-import { AiGeneration } from './entities/ai-generation.entity';
-import { ChatMessage } from './entities/chat-message.entity';
-import { Conversation } from './entities/conversation.entity';
-import { PricingQuote } from './entities/pricing-quote.entity';
-import { OpenRouterService } from './openrouter.service';
-import { PricingService } from './pricing.service';
+import { WalletService } from '../../wallet/wallet.service';
+import { AiGeneration } from '../generations/ai-generation.entity';
+import { ChatMessage } from './chat-message.entity';
+import { Conversation } from './conversation.entity';
+import { PricingQuote } from '../pricing/pricing-quote.entity';
+import { OpenRouterService } from '../openrouter.service';
+import { PricingService } from '../pricing/pricing.service';
 
 @Injectable()
 export class ChatService {

@@ -19,7 +19,14 @@ export const KLING_VIDEO_MODELS = [
       maxImageMb: 50,
       maxPromptCharacters: 2500,
     },
-    pricing: { unitType: 'api_unit', source: 'kling_api_pricing', perSecond: { '720p': { includedAudio: 0.8 }, '1080p': { includedAudio: 1 } } },
+    pricing: {
+      unitType: 'api_unit',
+      source: 'kling_api_pricing',
+      perSecond: {
+        '720p': { includedAudio: 0.8 },
+        '1080p': { includedAudio: 1 },
+      },
+    },
   },
   {
     id: 'kling/kling-3.0',
@@ -40,7 +47,15 @@ export const KLING_VIDEO_MODELS = [
       maxImageMb: 50,
       maxPromptCharacters: 3072,
     },
-    pricing: { unitType: 'api_unit', source: 'kling_api_pricing', perSecond: { '720p': { noAudio: 0.6, withAudio: 0.9 }, '1080p': { noAudio: 0.8, withAudio: 1.2 }, '4k': { noAudio: 3, withAudio: 3 } } },
+    pricing: {
+      unitType: 'api_unit',
+      source: 'kling_api_pricing',
+      perSecond: {
+        '720p': { noAudio: 0.6, withAudio: 0.9 },
+        '1080p': { noAudio: 0.8, withAudio: 1.2 },
+        '4k': { noAudio: 3, withAudio: 3 },
+      },
+    },
   },
   {
     id: 'kling/kling-3.0-omni',
@@ -63,7 +78,15 @@ export const KLING_VIDEO_MODELS = [
       maxImageMb: 50,
       maxPromptCharacters: 3072,
     },
-    pricing: { unitType: 'api_unit', source: 'kling_api_pricing', perSecond: { '720p': { noAudio: 0.6, withAudio: 0.8 }, '1080p': { noAudio: 0.8, withAudio: 1 }, '4k': { noAudio: 3, withAudio: 3 } } },
+    pricing: {
+      unitType: 'api_unit',
+      source: 'kling_api_pricing',
+      perSecond: {
+        '720p': { noAudio: 0.6, withAudio: 0.8 },
+        '1080p': { noAudio: 0.8, withAudio: 1 },
+        '4k': { noAudio: 3, withAudio: 3 },
+      },
+    },
   },
   {
     id: 'kling/kling-o1',
@@ -85,7 +108,11 @@ export const KLING_VIDEO_MODELS = [
       maxImageMb: 10,
       maxPromptCharacters: 2500,
     },
-    pricing: { unitType: 'unpublished_api_rate', source: 'kling_api_pricing', perSecond: {} },
+    pricing: {
+      unitType: 'unpublished_api_rate',
+      source: 'kling_api_pricing',
+      perSecond: {},
+    },
   },
 ] as const;
 

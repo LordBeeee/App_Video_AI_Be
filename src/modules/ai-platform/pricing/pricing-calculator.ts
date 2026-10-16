@@ -42,3 +42,21 @@ export function estimateChatTokens(
 export function isQuoteExpired(expiresAt: Date, now = Date.now()) {
   return expiresAt.getTime() <= now;
 }
+
+export function chargeQuoteVnd(
+  maxPriceVnd: number,
+  usdVndRate: number,
+  markupRate: number,
+  actualCostUsd?: number,
+) {
+  if (
+    actualCostUsd == null ||
+    !Number.isFinite(actualCostUsd) ||
+    actualCostUsd < 0
+  )
+    return maxPriceVnd;
+  return Math.min(
+    maxPriceVnd,
+    calculateRetailVnd(actualCostUsd, usdVndRate, markupRate),
+  );
+}

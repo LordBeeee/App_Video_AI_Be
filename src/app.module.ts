@@ -1,42 +1,3 @@
-// import { Module } from '@nestjs/common';
-// import { ConfigModule } from '@nestjs/config';
-// import { TypeOrmModule } from '@nestjs/typeorm';
-// import { AppController } from './app.controller';
-// import { AppService } from './app.service';
-// import { UserModule } from './modules/user/user.module';
-// import { AuthModule } from './modules/auth/auth.module';
-// import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
-
-// @Module({
-//   imports: [
-//     ConfigModule.forRoot({
-//       isGlobal: true,
-//     }),
-
-//     TypeOrmModule.forRoot({
-//       type: 'postgres',
-//       host: process.env.DB_HOST,
-//       port: Number(process.env.DB_PORT),
-//       username: process.env.DB_USERNAME,
-//       password: process.env.DB_PASSWORD,
-//       database: process.env.DB_DATABASE,
-//       ssl:
-//       process.env.DB_SSL === 'true'
-//         ? { rejectUnauthorized: false }
-//         : false,
-//       autoLoadEntities: true,
-//       synchronize: false,
-//     }),
-
-//     UserModule,
-//     AuthModule,
-//     CloudinaryModule,
-//   ],
-//   controllers: [AppController],
-//   providers: [AppService],
-// })
-// export class AppModule {}
-
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -50,10 +11,11 @@ import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
 import { AssetsModule } from './modules/assets/assets.module';
 import { WalletModule } from './modules/wallet/wallet.module';
 import { AiPlatformModule } from './modules/ai-platform/ai-platform.module';
+import { validateEnv } from './config/validate-env';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
 
     // Rate limiting toàn bộ app
     ThrottlerModule.forRoot([
@@ -66,7 +28,7 @@ import { AiPlatformModule } from './modules/ai-platform/ai-platform.module';
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: process.env.DB_HOST,
-      port: Number(process.env.DB_PORT),
+      port: Number(process.env.DB_PORT || 5432),
       username: process.env.DB_USERNAME,
       password: process.env.DB_PASSWORD,
       database: process.env.DB_DATABASE,

@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { PricingService } from './pricing.service';
-import { KLING_VIDEO_MODELS } from './kling-video';
+import { KLING_VIDEO_MODELS } from '../catalog/kling-video';
 
 describe('PricingService option validation', () => {
   const service = new PricingService(
@@ -94,7 +94,10 @@ describe('PricingService option validation', () => {
       (priced as any).videoCost(standard, { duration: 5, resolution: '4k' }),
     ).toBeCloseTo(2.1);
     expect(
-      (priced as any).videoCost(KLING_VIDEO_MODELS[3], { duration: 5, resolution: '720p' }),
+      (priced as any).videoCost(KLING_VIDEO_MODELS[3], {
+        duration: 5,
+        resolution: '720p',
+      }),
     ).toBe(0);
   });
 
@@ -102,14 +105,20 @@ describe('PricingService option validation', () => {
     let savedQuote: any;
     const quotes = {
       create: (value: any) => ({ ...value, id: 'quote-1' }),
-      save: async (value: any) => { savedQuote = value; },
+      save: async (value: any) => {
+        savedQuote = value;
+      },
       findOne: async () => savedQuote,
     };
     const pricing = new PricingService(
       quotes as never,
       { find: async () => KLING_VIDEO_MODELS[0] } as never,
-      { getUsdVndRate: async () => ({ rate: 25_000, source: 'test' }) } as never,
-      { get: (key: string) => key === 'KLING_USD_PER_API_UNIT' ? '0.14' : '0' } as never,
+      {
+        getUsdVndRate: async () => ({ rate: 25_000, source: 'test' }),
+      } as never,
+      {
+        get: (key: string) => (key === 'KLING_USD_PER_API_UNIT' ? '0.14' : '0'),
+      } as never,
     );
 
     await pricing.createQuote(1, {
@@ -120,6 +129,8 @@ describe('PricingService option validation', () => {
     });
 
     expect(savedQuote.request.promptLength).toBe('move forward'.length);
-    await expect(pricing.getValidQuote(1, 'quote-1', 'move forward')).resolves.toBe(savedQuote);
+    await expect(
+      pricing.getValidQuote(1, 'quote-1', 'move forward'),
+    ).resolves.toBe(savedQuote);
   });
 });

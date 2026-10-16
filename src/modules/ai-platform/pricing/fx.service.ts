@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
 import { Repository } from 'typeorm';
-import { FxRate } from './entities/fx-rate.entity';
+import { FxRate } from './fx-rate.entity';
 
 @Injectable()
 export class FxService {

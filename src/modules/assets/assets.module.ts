@@ -4,8 +4,8 @@ import { Asset } from './entities/asset.entity';
 import { AssetsController } from './assets.controller';
 import { AssetsService } from './assets.service';
 import { CloudinaryModule } from '../../common/cloudinary/cloudinary.module';
-import { AiGeneration } from '../ai-platform/entities/ai-generation.entity';
-import { AiGenerationAsset } from '../ai-platform/entities/ai-generation-asset.entity';
+import { AiGeneration } from '../ai-platform/generations/ai-generation.entity';
+import { AiGenerationAsset } from '../ai-platform/generations/ai-generation-asset.entity';
 
 @Module({
   imports: [

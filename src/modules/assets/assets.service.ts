@@ -7,8 +7,8 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
-import { AiGenerationAsset } from '../ai-platform/entities/ai-generation-asset.entity';
-import { AiGeneration } from '../ai-platform/entities/ai-generation.entity';
+import { AiGenerationAsset } from '../ai-platform/generations/ai-generation-asset.entity';
+import { AiGeneration } from '../ai-platform/generations/ai-generation.entity';
 import { Asset } from './entities/asset.entity';
 
 const TAB_TO_SOURCE_TYPE: Record<string, string> = {

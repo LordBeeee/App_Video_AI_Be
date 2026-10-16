@@ -2,24 +2,23 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
-  Logger,
   NotFoundException,
-  OnModuleDestroy,
-  OnModuleInit,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
-import { Asset } from '../assets/entities/asset.entity';
-import { WalletService } from '../wallet/wallet.service';
-import { AiGeneration } from './entities/ai-generation.entity';
-import { AiGenerationAsset } from './entities/ai-generation-asset.entity';
-import { PricingQuote } from './entities/pricing-quote.entity';
-import { OpenRouterService } from './openrouter.service';
-import { CatalogService } from './catalog.service';
-import { PricingService } from './pricing.service';
-import { KlingService } from './kling.service';
+import { CloudinaryService } from '../../../common/cloudinary/cloudinary.service';
+import { Asset } from '../../assets/entities/asset.entity';
+import { WalletService } from '../../wallet/wallet.service';
+import { AiGeneration } from './ai-generation.entity';
+import { AiGenerationAsset } from './ai-generation-asset.entity';
+import { PricingQuote } from '../pricing/pricing-quote.entity';
+import { OpenRouterService } from '../openrouter.service';
+import { CatalogService } from '../catalog/catalog.service';
+import { PricingService } from '../pricing/pricing.service';
+import { KlingService } from '../kling.service';
+import { GenerationAssetsService } from './generation-assets.service';
+import { chargeQuoteVnd } from '../pricing/pricing-calculator';
+import { VideoReconciliationService } from './video-reconciliation.service';
 
 interface CreateGenerationBody {
   quoteId: string;
@@ -30,11 +29,7 @@ interface CreateGenerationBody {
 }
 
 @Injectable()
-export class GenerationsService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(GenerationsService.name);
-  private reconciliationTimer?: NodeJS.Timeout;
-  private readonly reconcilingVideos = new Set<string>();
-
+export class GenerationsService {
   constructor(
     @InjectRepository(AiGeneration)
     private readonly generations: Repository<AiGeneration>,
@@ -49,65 +44,16 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
     private readonly openRouter: OpenRouterService,
     private readonly kling: KlingService,
     private readonly cloudinary: CloudinaryService,
-    private readonly config: ConfigService,
+    private readonly outputAssets: GenerationAssetsService,
+    private readonly videoReconciliation: VideoReconciliationService,
   ) {}
 
-  onModuleInit() {
-    const intervalMs = Math.max(
-      15_000,
-      Number(this.config.get<string>('VIDEO_RECONCILE_INTERVAL_MS')) || 30_000,
-    );
-    this.reconciliationTimer = setInterval(() => {
-      void this.reconcilePendingVideos();
-    }, intervalMs);
-    this.reconciliationTimer.unref();
-  }
-
-  onModuleDestroy() {
-    if (this.reconciliationTimer) clearInterval(this.reconciliationTimer);
-  }
-
-  private async reconcilePendingVideos() {
-    let pending: AiGeneration[];
-    try {
-      pending = await this.generations
-        .createQueryBuilder('generation')
-        .where('generation.modality = :modality', { modality: 'video' })
-        .andWhere('generation.status IN (:...statuses)', {
-          statuses: ['pending', 'queued', 'processing', 'running'],
-        })
-        .orderBy('generation.updated_at', 'ASC')
-        .take(20)
-        .getMany();
-    } catch (error) {
-      this.logger.warn(
-        `Tạm bỏ qua đối soát video: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return;
-    }
-
-    for (const generation of pending) {
-      if (generation.source !== 'kling') continue;
-      try {
-        await this.reconcileVideo(generation);
-      } catch (error) {
-        this.logger.warn(
-          `Không thể đối soát video ${generation.id}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }
-  }
-
   private chargeVnd(quote: PricingQuote, actualCostUsd?: number) {
-    if (!(actualCostUsd != null && actualCostUsd >= 0))
-      return Number(quote.maxPriceVnd);
-    return Math.min(
+    return chargeQuoteVnd(
       Number(quote.maxPriceVnd),
-      Math.ceil(
-        actualCostUsd *
-          Number(quote.usdVndRate) *
-          (1 + Number(quote.markupRate)),
-      ),
+      Number(quote.usdVndRate),
+      Number(quote.markupRate),
+      actualCostUsd,
     );
   }
 
@@ -134,52 +80,6 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
     return undefined;
   }
 
-  private async saveAsset(
-    generationId: string,
-    userId: number,
-    modality: string,
-    url: string,
-    metadata: Record<string, any> = {},
-  ) {
-    const asset = await this.assets.save(
-      this.assets.create({
-        userId,
-        projectId: null,
-        sceneId: null,
-        assetType: modality,
-        assetRole: 'output',
-        sourceType: 'generated',
-        originalUrl: url,
-        storedUrl: url,
-        thumbnailUrl:
-          String(metadata.thumbnailUrl || '') ||
-          (modality === 'image' ? url : null),
-        storageProvider: 'cloudinary',
-        mimeType:
-          modality === 'image'
-            ? 'image/png'
-            : modality === 'audio'
-              ? 'audio/mpeg'
-              : 'video/mp4',
-        fileSizeBytes: null,
-        durationSeconds: null,
-        fps: null,
-        width: null,
-        height: null,
-        isFavorite: false,
-        metadata,
-      }),
-    );
-    await this.generationAssets.save(
-      this.generationAssets.create({
-        generationId,
-        assetId: asset.id,
-        role: 'output',
-      }),
-    );
-    return asset;
-  }
-
   async create(userId: number, body: CreateGenerationBody) {
     const prompt = String(body.prompt || '').trim();
     if (!prompt) throw new BadRequestException('Prompt là bắt buộc');
@@ -196,9 +96,12 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
     );
     if (
       quote.modality === 'video' &&
-      prompt.length > Number(catalogModel.capabilities?.maxPromptCharacters || 2500)
+      prompt.length >
+        Number(catalogModel.capabilities?.maxPromptCharacters || 2500)
     ) {
-      throw new BadRequestException('Prompt vượt giới hạn ký tự của model Kling');
+      throw new BadRequestException(
+        'Prompt vượt giới hạn ký tự của model Kling',
+      );
     }
     const referenceLimit =
       quote.modality === 'image'
@@ -236,7 +139,8 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
     }
     if (
       quote.modality === 'video' &&
-      (quote.request?.options?.referenceMode || 'first_frame') === 'first_frame' &&
+      (quote.request?.options?.referenceMode || 'first_frame') ===
+        'first_frame' &&
       suppliedReferenceCount > 2
     ) {
       throw new BadRequestException('Ảnh đầu/cuối chỉ hỗ trợ tối đa 2 ảnh');
@@ -265,10 +169,15 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
           !['image/jpeg', 'image/png'].includes(asset.mimeType || '') ||
           (asset.width != null && asset.width < 300) ||
           (asset.height != null && asset.height < 300) ||
-          (asset.width != null && asset.height != null &&
-            (asset.width / asset.height < 0.4 || asset.width / asset.height > 2.5)) ||
+          (asset.width != null &&
+            asset.height != null &&
+            (asset.width / asset.height < 0.4 ||
+              asset.width / asset.height > 2.5)) ||
           (asset.fileSizeBytes != null &&
-            asset.fileSizeBytes > Number(catalogModel.capabilities?.maxImageMb || 10) * 1024 * 1024),
+            asset.fileSizeBytes >
+              Number(catalogModel.capabilities?.maxImageMb || 10) *
+                1024 *
+                1024),
       )
     ) {
       throw new BadRequestException(
@@ -398,7 +307,7 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
         `${generation.id}_${index + 1}`,
       );
       urls.push(uploaded.secure_url);
-      await this.saveAsset(
+      await this.outputAssets.saveOutput(
         generation.id,
         generation.userId,
         'image',
@@ -450,9 +359,15 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
       `ai-generation/users/${generation.userId}/audio`,
       generation.id,
     );
-    await this.saveAsset(generation.id, generation.userId, 'audio', url, {
-      generationId: generation.id,
-    });
+    await this.outputAssets.saveOutput(
+      generation.id,
+      generation.userId,
+      'audio',
+      url,
+      {
+        generationId: generation.id,
+      },
+    );
     const actualUsd = await this.resolveActualCost(
       providerGenerationId || undefined,
       undefined,
@@ -515,93 +430,13 @@ export class GenerationsService implements OnModuleInit, OnModuleDestroy {
       generation.modality === 'video' &&
       ['pending', 'queued', 'processing', 'running'].includes(generation.status)
     ) {
-      await this.reconcileVideo(generation);
+      await this.videoReconciliation.reconcile(generation);
       generation = await this.generations.findOneOrFail({
         where: { id },
         relations: { model: true, linkedAssets: { asset: true } },
       });
     }
     return this.response(generation);
-  }
-
-  private async reconcileVideo(generation: AiGeneration, suppliedJob?: any) {
-    if (generation.source !== 'kling' || !generation.externalJobId)
-      return generation;
-    if (this.reconcilingVideos.has(generation.id)) return generation;
-    this.reconcilingVideos.add(generation.id);
-    try {
-      const job =
-        suppliedJob ||
-        (await this.kling.getJob(
-          generation.modelSlug,
-          generation.externalJobId,
-        ));
-      const state = job.status;
-      if (
-        state === 'completed' ||
-        state === 'succeeded' ||
-        state === 'succeed'
-      ) {
-        if (!job.url)
-          throw new BadRequestException('Kling chưa trả về URL video');
-        const buffer = await this.kling.download(job.url);
-        const uploaded = await this.cloudinary.uploadVideoBuffer(
-          buffer,
-          `ai-generation/users/${generation.userId}/videos`,
-          generation.id,
-        );
-        await this.saveAsset(
-          generation.id,
-          generation.userId,
-          'video',
-          uploaded.secure_url,
-          {
-            generationId: generation.id,
-            thumbnailUrl: uploaded.thumbnail_url,
-          },
-        );
-        const quote = await this.quotes.findOneOrFail({
-          where: { id: generation.quoteId },
-        });
-        const actualUsd =
-          Number.isFinite(job.costUsd) && job.costUsd >= 0
-            ? job.costUsd
-            : undefined;
-        const charge = this.chargeVnd(quote, actualUsd);
-        generation.status = 'succeeded';
-        generation.outputUrls = [uploaded.secure_url];
-        generation.usage = {
-          units: Number.isFinite(job.units) ? job.units : undefined,
-        };
-        generation.actualCostUsd =
-          actualUsd != null ? String(actualUsd) : undefined;
-        generation.chargedVnd = charge;
-        generation.completedAt = new Date();
-        await this.generations.save(generation);
-        await this.wallets.settle(generation.walletHoldId!, charge, {
-          generationId: generation.id,
-          modality: 'video',
-        });
-      } else if (['failed', 'cancelled', 'expired'].includes(state)) {
-        generation.status = 'failed';
-        generation.errorMessage =
-          typeof job.error === 'string'
-            ? job.error
-            : job.error?.message || `Video ${state}`;
-        generation.completedAt = new Date();
-        await this.generations.save(generation);
-        await this.wallets.release(
-          generation.walletHoldId!,
-          generation.errorMessage || `Video ${state}`,
-        );
-      } else {
-        generation.status = state || generation.status;
-        await this.generations.save(generation);
-      }
-      return generation;
-    } finally {
-      this.reconcilingVideos.delete(generation.id);
-    }
   }
 
   response(item: AiGeneration) {
