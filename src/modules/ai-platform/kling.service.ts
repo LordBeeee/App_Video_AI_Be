@@ -1,7 +1,10 @@
 import {
   BadGatewayException,
   BadRequestException,
+  ConflictException,
+  ForbiddenException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
@@ -294,6 +297,33 @@ export class KlingService {
     });
     for (const asset of assets) {
       const meta = asset.metadata as Record<string, any>;
+      if (meta?.deleteStatus === 'submitting') continue;
+      if (
+        meta?.deleteStatus === 'submitted' ||
+        meta?.deleteStatus === 'processing'
+      ) {
+        try {
+          const path =
+            asset.assetRole === 'voice'
+              ? 'custom-voices'
+              : 'advanced-custom-elements';
+          const task = await this.request(
+            'GET',
+            `/v1/general/${path}/${encodeURIComponent(meta.deleteTaskId)}`,
+          );
+          meta.deleteStatus = task?.task_status || meta.deleteStatus;
+          meta.deleteError =
+            task?.task_status === 'failed'
+              ? task?.task_status_msg || 'Kling không xóa được Reference'
+              : null;
+          asset.metadata = meta;
+          await this.assetRepo.save(asset);
+        } catch {
+          /* Keep the pending deletion visible for a later status check. */
+        }
+        continue;
+      }
+      if (meta?.deleteStatus === 'succeed') continue;
       if (!meta?.taskId || !['submitted', 'processing'].includes(meta.status))
         continue;
       try {
@@ -321,7 +351,71 @@ export class KlingService {
         /* Keep the saved task visible if Kling is temporarily unavailable. */
       }
     }
-    return { items: assets };
+    return {
+      items: assets.filter(
+        (asset) =>
+          (asset.metadata as Record<string, any>)?.deleteStatus !== 'succeed',
+      ),
+    };
+  }
+
+  async deleteReference(userId: number, assetId: number) {
+    if (!Number.isSafeInteger(assetId) || assetId < 1)
+      throw new BadRequestException('Reference ID không hợp lệ');
+    const asset = await this.assetRepo.findOne({ where: { id: assetId } });
+    if (!asset) throw new NotFoundException('Không tìm thấy Reference');
+    if (Number(asset.userId) !== Number(userId)) throw new ForbiddenException();
+    if (
+      asset.sourceType !== 'reference' ||
+      !['element', 'voice'].includes(asset.assetRole || '')
+    )
+      throw new BadRequestException('Asset này không phải Reference');
+
+    const meta = asset.metadata as Record<string, any>;
+    if (meta.deleteStatus === 'succeed') return asset;
+    if (['submitting', 'submitted', 'processing'].includes(meta.deleteStatus))
+      return asset;
+
+    const isVoice = asset.assetRole === 'voice';
+    const klingId = isVoice ? meta.voiceId : meta.elementId;
+    if (!klingId) {
+      if (meta.status !== 'failed')
+        throw new ConflictException(
+          'Reference đang tạo, hãy đợi Kling xử lý xong',
+        );
+      asset.metadata = { ...meta, deleteStatus: 'succeed' };
+      return this.assetRepo.save(asset);
+    }
+
+    asset.metadata = { ...meta, deleteStatus: 'submitting', deleteError: null };
+    await this.assetRepo.save(asset);
+    try {
+      const task = await this.request(
+        'POST',
+        isVoice
+          ? '/v1/general/delete-voices'
+          : '/v1/general/delete-advanced-elements',
+        isVoice
+          ? { voice_id: String(klingId) }
+          : { element_id: String(klingId) },
+      );
+      if (!task?.task_id && task?.task_status !== 'succeed')
+        throw new BadGatewayException('Kling không trả về task ID xóa');
+      asset.metadata = {
+        ...asset.metadata,
+        deleteTaskId: task.task_id || null,
+        deleteStatus: task.task_status || 'submitted',
+      };
+      return this.assetRepo.save(asset);
+    } catch (error) {
+      asset.metadata = {
+        ...asset.metadata,
+        deleteStatus: 'failed',
+        deleteError: error instanceof Error ? error.message : String(error),
+      };
+      await this.assetRepo.save(asset);
+      throw error;
+    }
   }
 
   async submit(

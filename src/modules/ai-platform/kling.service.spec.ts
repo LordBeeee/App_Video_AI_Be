@@ -338,4 +338,149 @@ describe('Kling element creation', () => {
       trialUrl: 'https://example.com/preview.mp3',
     });
   });
+
+  it.each([
+    [
+      'element',
+      'image',
+      'elementId',
+      123,
+      '/v1/general/delete-advanced-elements',
+      { element_id: '123' },
+    ],
+    [
+      'element',
+      'video',
+      'elementId',
+      456,
+      '/v1/general/delete-advanced-elements',
+      { element_id: '456' },
+    ],
+    [
+      'voice',
+      'audio',
+      'voiceId',
+      'voice-789',
+      '/v1/general/delete-voices',
+      { voice_id: 'voice-789' },
+    ],
+  ])(
+    'deletes an owned %s %s reference through Kling',
+    async (role, type, idField, klingId, path, body) => {
+      const asset = {
+        id: 9,
+        userId: 7,
+        sourceType: 'reference',
+        assetRole: role,
+        assetType: type,
+        metadata: { status: 'succeed', [idField]: klingId },
+      };
+      repo.findOne.mockResolvedValue(asset);
+      request.mockResolvedValue({
+        data: {
+          code: 0,
+          data: { task_id: 'delete-task', task_status: 'submitted' },
+        },
+      });
+
+      const result = await service.deleteReference(7, 9);
+
+      expect(request.mock.calls[0][0]).toMatchObject({
+        method: 'POST',
+        url: `https://api-singapore.klingai.com${path}`,
+        data: body,
+      });
+      expect(result.metadata).toMatchObject({
+        deleteTaskId: 'delete-task',
+        deleteStatus: 'submitted',
+      });
+    },
+  );
+
+  it('refuses to delete another user’s reference', async () => {
+    repo.findOne.mockResolvedValue({
+      id: 9,
+      userId: 8,
+      sourceType: 'reference',
+      assetRole: 'element',
+    });
+    await expect(service.deleteReference(7, 9)).rejects.toThrow();
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('waits for a creation task before allowing deletion', async () => {
+    repo.findOne.mockResolvedValue({
+      id: 9,
+      userId: 7,
+      sourceType: 'reference',
+      assetRole: 'voice',
+      metadata: { status: 'processing', taskId: 'create-task' },
+    });
+    await expect(service.deleteReference(7, 9)).rejects.toThrow('đang tạo');
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('hides a failed creation without calling Kling', async () => {
+    repo.findOne.mockResolvedValue({
+      id: 9,
+      userId: 7,
+      sourceType: 'reference',
+      assetRole: 'voice',
+      metadata: { status: 'failed', taskId: null },
+    });
+    const result = await service.deleteReference(7, 9);
+    expect(result.metadata.deleteStatus).toBe('succeed');
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('keeps a reference visible when Kling reports deletion failed', async () => {
+    const asset = {
+      id: 9,
+      assetRole: 'voice',
+      metadata: {
+        status: 'succeed',
+        deleteStatus: 'submitted',
+        deleteTaskId: 'delete-task',
+      },
+    };
+    repo.find.mockResolvedValue([asset]);
+    request.mockResolvedValue({
+      data: {
+        code: 0,
+        data: { task_status: 'failed', task_status_msg: 'Voice is in use' },
+      },
+    });
+
+    const result = await service.listReferences(7);
+
+    expect(result.items).toEqual([asset]);
+    expect(asset.metadata).toMatchObject({
+      deleteStatus: 'failed',
+      deleteError: 'Voice is in use',
+    });
+  });
+
+  it('removes a reference from the list only after Kling confirms deletion', async () => {
+    const asset = {
+      id: 9,
+      assetRole: 'element',
+      metadata: {
+        status: 'succeed',
+        deleteStatus: 'submitted',
+        deleteTaskId: 'delete-task',
+      },
+    };
+    repo.find.mockResolvedValue([asset]);
+    request.mockResolvedValue({
+      data: { code: 0, data: { task_status: 'succeed' } },
+    });
+
+    const result = await service.listReferences(7);
+
+    expect(request.mock.calls[0][0].url).toContain(
+      '/advanced-custom-elements/delete-task',
+    );
+    expect(asset.metadata.deleteStatus).toBe('succeed');
+    expect(result.items).toEqual([]);
+  });
 });

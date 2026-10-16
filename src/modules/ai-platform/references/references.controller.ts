@@ -2,7 +2,15 @@ import {
   CurrentUser,
   type AuthenticatedUser,
 } from '../../auth/decorators/current-user.decorator';
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { KlingService } from '../kling.service';
 
@@ -24,5 +32,10 @@ export class ReferencesController {
   @Post('voices')
   createVoice(@CurrentUser() user: AuthenticatedUser, @Body() body: any) {
     return this.kling.createVoice(user.id, body);
+  }
+
+  @Delete(':id')
+  delete(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.kling.deleteReference(user.id, Number(id));
   }
 }
