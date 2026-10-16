@@ -1,12 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import { CatalogService } from './catalog.service';
+import { KLING_VIDEO_MODELS } from './kling-video';
 
 describe('CatalogService', () => {
-  const allowedVideoSlugs = [
-    'google/veo-3.1',
-    'kwaivgi/kling-v3.0-pro',
-    'bytedance/seedance-2.5',
-  ];
   const allowedImageSlugs = [
     'bytedance-seed/seedream-5-0-pro',
     'openai/gpt-image-2',
@@ -41,37 +37,11 @@ describe('CatalogService', () => {
           },
         ],
       }),
-      listVideoModels: jest.fn().mockResolvedValue({
-        data: [
-          {
-            id: 'runway/gen-4.5',
-            name: 'Runway: Gen-4.5',
-            supported_resolutions: ['720p'],
-          },
-          {
-            id: 'bytedance/seedance-2.5',
-            name: 'ByteDance: Seedance 2.5',
-            supported_resolutions: ['720p'],
-          },
-          {
-            id: 'google/veo-3.1',
-            name: 'Google: Veo 3.1',
-            supported_resolutions: ['1080p'],
-          },
-          {
-            id: 'kwaivgi/kling-v3.0-pro',
-            name: 'Kling: Video v3.0 Pro',
-            supported_resolutions: ['720p'],
-          },
-        ],
-      }),
     };
     const config = {
       get: jest.fn((key: string) => {
         if (key === 'OPENROUTER_IMAGE_MODEL_ALLOWLIST')
           return allowedImageSlugs.join(',');
-        if (key === 'OPENROUTER_VIDEO_MODEL_ALLOWLIST')
-          return allowedVideoSlugs.join(',');
         return undefined;
       }),
     };
@@ -91,12 +61,14 @@ describe('CatalogService', () => {
     };
   };
 
-  it('returns only configured video models in allowlist order', async () => {
+  it('returns direct Kling video models without querying OpenRouter', async () => {
     const { service } = createService();
 
     const result = await service.list('video');
 
-    expect(result.map((model) => model.id)).toEqual(allowedVideoSlugs);
+    expect(result.map((model) => model.id)).toEqual(
+      KLING_VIDEO_MODELS.map((model) => model.id),
+    );
     expect(result.some((model) => model.id === 'runway/gen-4.5')).toBe(false);
   });
 

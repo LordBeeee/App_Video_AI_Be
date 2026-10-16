@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { PricingService } from './pricing.service';
+import { KLING_VIDEO_MODELS } from './kling-video';
 
 describe('PricingService option validation', () => {
   const service = new PricingService(
@@ -65,5 +66,35 @@ describe('PricingService option validation', () => {
         { size: '1280x720', resolution: '720p' },
       ),
     ).toThrow(BadRequestException);
+  });
+
+  it('quotes Kling video from API units, not creator Credits', () => {
+    const priced = new PricingService(
+      {} as never,
+      {} as never,
+      {} as never,
+      { get: () => '0.14' } as never,
+    );
+    const turbo = KLING_VIDEO_MODELS[0];
+    const standard = KLING_VIDEO_MODELS[1];
+    expect(
+      (priced as any).videoCost(turbo, { duration: 5, resolution: '720p' }),
+    ).toBeCloseTo(0.56);
+    expect(
+      (priced as any).videoCost(standard, {
+        duration: 5,
+        resolution: '1080p',
+        generateAudio: true,
+      }),
+    ).toBeCloseTo(0.84);
+    expect(
+      (priced as any).videoCost(standard, { duration: 5, resolution: '720p' }),
+    ).toBeCloseTo(0.42);
+    expect(
+      (priced as any).videoCost(standard, { duration: 5, resolution: '4k' }),
+    ).toBeCloseTo(2.1);
+    expect(
+      (priced as any).videoCost(KLING_VIDEO_MODELS[3], { duration: 5, resolution: '720p' }),
+    ).toBe(0);
   });
 });

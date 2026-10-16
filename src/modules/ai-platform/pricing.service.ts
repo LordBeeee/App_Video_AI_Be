@@ -100,9 +100,13 @@ export class PricingService {
           'Kích thước không dùng cùng tỷ lệ hoặc độ phân giải',
         );
       }
-      if (options.generateAudio != null && !caps.generateAudio) {
+      if (options.generateAudio === true && !caps.generateAudio) {
         throw new BadRequestException('Model không hỗ trợ tạo âm thanh');
       }
+      if (options.multiShot === true && !caps.multiShot) {
+        throw new BadRequestException('Model không hỗ trợ chế độ nhiều cảnh');
+      }
+      check(options.referenceMode, caps.referenceModes, 'Chế độ ảnh');
       if (options.seed != null && options.seed !== '' && !caps.seed) {
         throw new BadRequestException('Model không hỗ trợ seed');
       }
@@ -143,6 +147,24 @@ export class PricingService {
   }
 
   private videoCost(model: any, options: Record<string, any>) {
+    if (model.provider === 'kling') {
+      const resolution = String(
+        options.resolution || model.capabilities.resolutions[0],
+      );
+      const duration = Number(
+        options.duration || (model.capabilities.durations.includes(5) ? 5 : model.capabilities.durations[0]),
+      );
+      const rate = model.pricing.perSecond[resolution];
+      const unitsPerSecond = Number(rate?.[model.capabilities.nativeAudioIncluded
+        ? 'includedAudio'
+        : options.generateAudio ? 'withAudio' : 'noAudio']);
+      if (!Number.isFinite(unitsPerSecond) || !Number.isFinite(duration)) return 0;
+      const usdPerUnit = Number(
+        this.config.get<string>('KLING_USD_PER_API_UNIT') || 0.14,
+      );
+      if (!(usdPerUnit > 0)) return 0;
+      return unitsPerSecond * duration * usdPerUnit;
+    }
     const pricing = model.pricing || {};
     const entries = Object.entries(pricing) as [string, any][];
     const resolution = String(options.resolution || '').toLowerCase();
@@ -208,6 +230,16 @@ export class PricingService {
       minUsd = maxUsd = this.imageCost(model, options);
     if (request.modality === 'video')
       minUsd = maxUsd = this.videoCost(model, options);
+    if (request.modality === 'video' && model.provider === 'kling') {
+      const usdPerUnit = Number(
+        this.config.get<string>('KLING_USD_PER_API_UNIT') || 0.14,
+      );
+      units = {
+        estimatedUnits: maxUsd / usdPerUnit,
+        usdPerUnit,
+        basis: model.pricing.source,
+      };
+    }
     if (request.modality === 'audio')
       minUsd = maxUsd = this.audioCost(model, prompt);
     if (request.modality === 'chat') {
@@ -221,13 +253,17 @@ export class PricingService {
     }
     if (!(maxUsd > 0)) {
       throw new BadRequestException(
-        'Model chưa có dữ liệu giá phù hợp với lựa chọn này',
+        model.provider === 'kling' && model.pricing?.unitType === 'unpublished_api_rate'
+          ? 'Kling O1 chưa có giá API công khai để báo giá và tạo tác vụ'
+          : 'Model chưa có dữ liệu giá phù hợp với lựa chọn này',
       );
     }
 
     const fx = await this.fx.getUsdVndRate();
     const markupRate = Number(
-      this.config.get<string>('AI_MARKUP_RATE') || '0.20',
+      request.modality === 'video' && model.provider === 'kling'
+        ? this.config.get<string>('KLING_VIDEO_MARKUP_RATE') ?? '0'
+        : this.config.get<string>('AI_MARKUP_RATE') ?? '0.20',
     );
     const minPriceVnd = calculateRetailVnd(minUsd, fx.rate, markupRate);
     const maxPriceVnd = calculateRetailVnd(maxUsd, fx.rate, markupRate);
@@ -242,6 +278,13 @@ export class PricingService {
         promptHash: this.hashPrompt(prompt),
         promptLength: prompt.length,
         units,
+        ...(request.modality === 'video' && model.provider === 'kling'
+          ? {
+              priceBasis: model.pricing.unitType,
+              priceSource:
+                'https://kling.ai/dev/pricing',
+            }
+          : {}),
         fxSource: fx.source,
       },
       providerCostMinUsd: String(minUsd),

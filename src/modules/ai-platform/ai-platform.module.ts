@@ -17,8 +17,8 @@ import { ChatService } from './chat.service';
 import { FxService } from './fx.service';
 import { GenerationsController } from './generations.controller';
 import { GenerationsService } from './generations.service';
-import { OpenRouterWebhookController } from './openrouter-webhook.controller';
 import { OpenRouterService } from './openrouter.service';
+import { KlingService } from './kling.service';
 import { PricingController } from './pricing.controller';
 import { PricingService } from './pricing.service';
 
@@ -42,10 +42,10 @@ import { PricingService } from './pricing.service';
     PricingController,
     GenerationsController,
     ChatController,
-    OpenRouterWebhookController,
   ],
   providers: [
     OpenRouterService,
+    KlingService,
     CatalogService,
     FxService,
     PricingService,

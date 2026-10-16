@@ -35,7 +35,7 @@ export class AiGeneration {
   modelSlug!: string;
 
   @Column({ length: 30, default: 'openrouter' })
-  source!: 'openrouter' | 'legacy_kling';
+  source!: 'openrouter' | 'kling' | 'legacy_kling';
 
   @Column({ name: 'model_name_snapshot', length: 255, nullable: true })
   modelNameSnapshot?: string;
@@ -94,7 +94,10 @@ export class AiGeneration {
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt!: Date;
 
-  @ManyToOne(() => AiModel, { nullable: true, createForeignKeyConstraints: false })
+  @ManyToOne(() => AiModel, {
+    nullable: true,
+    createForeignKeyConstraints: false,
+  })
   @JoinColumn({ name: 'model_slug', referencedColumnName: 'openrouterSlug' })
   model?: AiModel;
 

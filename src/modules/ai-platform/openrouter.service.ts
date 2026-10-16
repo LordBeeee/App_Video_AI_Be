@@ -52,10 +52,6 @@ export class OpenRouterService {
     return this.request<any>({ method: 'GET', url: '/images/models' });
   }
 
-  listVideoModels() {
-    return this.request<any>({ method: 'GET', url: '/videos/models' });
-  }
-
   getImageModelEndpoints(path: string) {
     return this.request<any>({
       method: 'GET',
@@ -85,28 +81,6 @@ export class OpenRouterService {
         : error.message;
       throw new BadGatewayException(message || 'Không thể tạo giọng nói');
     }
-  }
-
-  submitVideo(body: Record<string, any>) {
-    return this.request<any>({ method: 'POST', url: '/videos', data: body });
-  }
-
-  getVideoJob(pollingUrl: string) {
-    const url = pollingUrl.startsWith('http')
-      ? pollingUrl.replace(this.baseUrl, '')
-      : pollingUrl.replace('/api/v1', '');
-    return this.request<any>({ method: 'GET', url });
-  }
-
-  async downloadVideo(jobId: string, sourceUrl?: string): Promise<Buffer> {
-    const url = sourceUrl || `${this.baseUrl}/videos/${jobId}/content?index=0`;
-    const response = await axios.get<ArrayBuffer>(url, {
-      headers: this.headers,
-      responseType: 'arraybuffer',
-      timeout: 180_000,
-      maxRedirects: 5,
-    });
-    return Buffer.from(response.data);
   }
 
   getGeneration(id: string) {

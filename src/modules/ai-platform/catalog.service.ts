@@ -10,6 +10,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { AiModel } from './entities/ai-model.entity';
 import { OpenRouterService } from './openrouter.service';
+import { KLING_VIDEO_MODELS } from './kling-video';
 
 export type AiModality = 'image' | 'video' | 'audio' | 'chat';
 
@@ -35,20 +36,6 @@ const DEFAULT_IMAGE_MODEL_ALLOWLIST = [
   'google/gemini-2.5-flash-image',
 ];
 
-const DEFAULT_VIDEO_MODEL_ALLOWLIST = [
-  'google/veo-3.1',
-  'google/veo-3.1-fast',
-  'google/veo-3.1-lite',
-  'kwaivgi/kling-v3.0-pro',
-  'kwaivgi/kling-v3.0-std',
-  'kwaivgi/kling-video-o1',
-  'bytedance/seedance-2.5',
-  'bytedance/seedance-2.0',
-  'bytedance/seedance-2.0-fast',
-  'bytedance/seedance-2.0-mini',
-  'bytedance/seedance-1-5-pro',
-];
-
 @Injectable()
 export class CatalogService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CatalogService.name);
@@ -63,7 +50,6 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    if (!this.config.get<string>('OPENROUTER_API_KEY')) return;
     this.refreshTimer = setInterval(
       () => void this.refreshAll(),
       Math.max(
@@ -181,45 +167,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
           endpointsPath: model.endpoints,
         }));
     } else if (modality === 'video') {
-      const response = await this.openRouter.listVideoModels();
-      const configuredAllowlist = (
-        this.config.get<string>('OPENROUTER_VIDEO_MODEL_ALLOWLIST') || ''
-      )
-        .split(',')
-        .map((slug) => slug.trim())
-        .filter(Boolean);
-      const videoModelAllowlist =
-        configuredAllowlist.length > 0
-          ? configuredAllowlist
-          : DEFAULT_VIDEO_MODEL_ALLOWLIST;
-      const allowedOrder = new Map(
-        videoModelAllowlist.map((slug, index) => [slug, index]),
-      );
-
-      data = (response.data || [])
-        .filter((model: any) => allowedOrder.has(model.id))
-        .sort(
-          (left: any, right: any) =>
-            (allowedOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
-            (allowedOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER),
-        )
-        .map((model: any) => ({
-          id: model.id,
-          name: model.name,
-          description: model.description,
-          modality,
-          capabilities: {
-            resolutions: model.supported_resolutions || [],
-            aspectRatios: model.supported_aspect_ratios || [],
-            sizes: model.supported_sizes || [],
-            durations: model.supported_durations || [],
-            frameImages: model.supported_frame_images || [],
-            generateAudio: !!model.generate_audio,
-            seed: !!model.seed,
-          },
-          pricing: model.pricing_skus || {},
-          passthrough: model.allowed_passthrough_parameters || [],
-        }));
+      data = KLING_VIDEO_MODELS.map((model) => ({ ...model }));
     } else {
       const output = modality === 'audio' ? 'speech' : 'text';
       const response = await this.openRouter.listModels(output);
