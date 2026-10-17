@@ -1,98 +1,78 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Video AI backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+NestJS API for authentication, media assets, AI generation, chat, pricing,
+wallets and payOS top-ups. PostgreSQL stores application data. OpenRouter,
+Kling, Cloudinary and payOS are external services.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Start from a fresh clone
 
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+Requirements: Node.js 20.6+, npm, PostgreSQL. Docker is optional for local
+PostgreSQL.
 
 ```bash
-$ npm install
+npm ci
+cp .env.example .env
+docker compose up -d postgres
+npm run db:setup
+npm run start:dev
 ```
 
-## Compile and run the project
+On PowerShell, use `Copy-Item .env.example .env` instead of `cp` if preferred.
+Set the required secrets in `.env` before starting the API. The local Docker
+database credentials in `compose.yaml` match `.env.example`; change both if
+needed. If PostgreSQL already runs locally, skip Docker and set the `DB_*`
+values to your empty database.
+
+To create the first administrator, set `BOOTSTRAP_ADMIN_EMAIL` and
+`BOOTSTRAP_ADMIN_PASSWORD` in your local `.env`, then run:
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm run db:create-admin
 ```
 
-## Run tests
+Remove those two bootstrap variables afterward. Never commit `.env` or real
+API keys. `db:setup` is only for an empty database. See [database setup](docs/database.md)
+for the legacy upgrade path.
+
+The API listens on `http://localhost:3000` by default. `GET /` is a simple
+smoke check. Login uses HTTP-only cookies. The default CORS origin is
+`http://localhost:5173`; set `FRONTEND_URL` if your frontend uses another URL.
+
+## Configuration
+
+`.env.example` lists every startup variable. Database, JWT, Cloudinary and
+OpenRouter settings are required at startup. Kling is needed for video jobs;
+payOS credentials are needed for top-ups and webhook verification. The
+application reports missing startup variables before connecting to the DB.
+
+## Main API flows
+
+- `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`
+- `GET /ai-catalog?modality=image|video|audio|chat`
+- `POST /pricing/quotes` then `POST /generations`
+- `POST /chat/conversations` and `POST /chat/conversations/:id/messages`
+- `GET /assets`, `POST /assets/upload`
+- `GET /wallet`, `POST /wallet/topups`
+
+See [AI platform behavior](AI_PLATFORM.md) for provider and pricing details.
+See [architecture](docs/architecture.md) for module boundaries and the generation flow.
+
+## Code map
+
+`src/modules/ai-platform/catalog` lists and syncs available models;
+`pricing` builds quotes; `generations` creates media and reconciles video
+jobs; `chat` streams conversation output; `references` handles Kling reference
+assets. `wallet` owns holds and settlement, while `assets` owns library items.
+`src/config` validates startup settings. `database/migrations` holds the fresh
+schema and `database/seeds` holds required initial data.
+
+## Checks
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm run build
+npm test -- --runInBand
+npm run lint
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+The current lint baseline still has existing violations; build and unit tests
+are the working gates while those are cleaned up module by module.

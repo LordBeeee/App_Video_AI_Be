@@ -1,48 +1,3 @@
-// import { Module } from '@nestjs/common';
-// import { ConfigModule } from '@nestjs/config';
-// import { TypeOrmModule } from '@nestjs/typeorm';
-// import { AppController } from './app.controller';
-// import { AppService } from './app.service';
-// import { UserModule } from './modules/user/user.module';
-// import { AuthModule } from './modules/auth/auth.module';
-// import { AiModelsModule } from './modules/ai-models/ai-models.module';
-// import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
-// import { KlingModule } from './common/kling/kling.module';
-// import { VideoGenerationsModule } from './modules/video-generations/video-generations.module';
-
-// @Module({
-//   imports: [
-//     ConfigModule.forRoot({
-//       isGlobal: true,
-//     }),
-
-//     TypeOrmModule.forRoot({
-//       type: 'postgres',
-//       host: process.env.DB_HOST,
-//       port: Number(process.env.DB_PORT),
-//       username: process.env.DB_USERNAME,
-//       password: process.env.DB_PASSWORD,
-//       database: process.env.DB_DATABASE,
-//       ssl:
-//       process.env.DB_SSL === 'true'
-//         ? { rejectUnauthorized: false }
-//         : false,
-//       autoLoadEntities: true,
-//       synchronize: false,
-//     }),
-
-//     UserModule,
-//     AuthModule,
-//     AiModelsModule,
-//     CloudinaryModule,
-//     KlingModule,
-//     VideoGenerationsModule,
-//   ],
-//   controllers: [AppController],
-//   providers: [AppService],
-// })
-// export class AppModule {}
-
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -52,45 +7,45 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UserModule } from './modules/user/user.module';
 import { AuthModule } from './modules/auth/auth.module';
-import { AiModelsModule } from './modules/ai-models/ai-models.module';
 import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
-import { KlingModule } from './common/kling/kling.module';
-import { VideoGenerationsModule } from './modules/video-generations/video-generations.module';
-import { BytePlusModule } from './common/byteplus/byteplus.module';
 import { AssetsModule } from './modules/assets/assets.module';
-import { ElementsModule } from './modules/elements/elements.module';
+import { WalletModule } from './modules/wallet/wallet.module';
+import { AiPlatformModule } from './modules/ai-platform/ai-platform.module';
+import { OperationsModule } from './modules/operations/operations.module';
+import { validateEnv } from './config/validate-env';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
 
     // Rate limiting toàn bộ app
-    ThrottlerModule.forRoot([{
-      ttl: 60_000, // 1 phút
-      limit: 60,   // 60 request/phút cho các route thường
-    }]),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60_000, // 1 phút
+        limit: 60, // 60 request/phút cho các route thường
+      },
+    ]),
 
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: process.env.DB_HOST,
-      port: Number(process.env.DB_PORT),
+      port: Number(process.env.DB_PORT || 5432),
       username: process.env.DB_USERNAME,
       password: process.env.DB_PASSWORD,
       database: process.env.DB_DATABASE,
-      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+      ssl:
+        process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
       autoLoadEntities: true,
       synchronize: false,
     }),
 
     UserModule,
     AuthModule,
-    AiModelsModule,
     CloudinaryModule,
-    KlingModule,
-    BytePlusModule,
-    VideoGenerationsModule,
     AssetsModule,
-    ElementsModule,
+    WalletModule,
+    AiPlatformModule,
+    OperationsModule,
   ],
   controllers: [AppController],
   providers: [

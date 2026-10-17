@@ -1,6 +1,10 @@
 import {
-  Entity, Column, PrimaryGeneratedColumn,
-  CreateDateColumn, ManyToOne, JoinColumn
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { User } from '../../user/entities/user.entity';
 
@@ -24,7 +28,12 @@ export class Asset {
   @Column({ name: 'asset_role', type: 'varchar', length: 50, nullable: true })
   assetRole!: string | null;
 
-  @Column({ name: 'source_type', type: 'varchar', length: 50, default: 'generated' })
+  @Column({
+    name: 'source_type',
+    type: 'varchar',
+    length: 50,
+    default: 'generated',
+  })
   sourceType!: string;
 
   @Column({ name: 'original_url', type: 'text', nullable: true })
@@ -36,7 +45,12 @@ export class Asset {
   @Column({ name: 'thumbnail_url', type: 'text', nullable: true })
   thumbnailUrl!: string | null;
 
-  @Column({ name: 'storage_provider', type: 'varchar', length: 50, nullable: true })
+  @Column({
+    name: 'storage_provider',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+  })
   storageProvider!: string | null;
 
   @Column({ name: 'mime_type', type: 'varchar', length: 100, nullable: true })
@@ -48,7 +62,7 @@ export class Asset {
   @Column({ name: 'duration_seconds', type: 'int', nullable: true })
   durationSeconds!: number | null;
 
-    @Column({ type: 'int', nullable: true })
+  @Column({ type: 'int', nullable: true })
   fps!: number | null;
 
   @Column({ type: 'int', nullable: true })
