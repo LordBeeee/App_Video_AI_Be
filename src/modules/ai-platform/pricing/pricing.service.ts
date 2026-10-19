@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { createHash } from 'crypto';
 import { Repository } from 'typeorm';
 import { CatalogService, AiModality } from '../catalog/catalog.service';
+import { formatKlingShots } from '../catalog/kling-video';
 import { FxService } from './fx.service';
 import { PricingQuote } from './pricing-quote.entity';
 import {
@@ -105,6 +106,46 @@ export class PricingService {
       }
       if (options.multiShot === true && !caps.multiShot) {
         throw new BadRequestException('Model không hỗ trợ chế độ nhiều cảnh');
+      }
+      if (options.customShots === true) {
+        const shots = options.shots;
+        if (
+          options.multiShot !== true ||
+          !caps.multiShot ||
+          !Array.isArray(shots) ||
+          shots.length < 1 ||
+          shots.length > 6 ||
+          shots.some(
+            (shot: any) =>
+              !shot ||
+              typeof shot.prompt !== 'string' ||
+              !shot.prompt.trim() ||
+              shot.prompt.trim().length > 512 ||
+              shot.prompt.includes(';') ||
+              !Number.isInteger(shot.duration) ||
+              shot.duration < 1,
+          ) ||
+          shots.reduce(
+            (total: number, shot: any) => total + shot.duration,
+            0,
+          ) !== Number(options.duration)
+        ) {
+          throw new BadRequestException(
+            'Các shot phải có mô tả và tổng thời gian bằng thời lượng video',
+          );
+        }
+        if (
+          formatKlingShots(shots).length >
+          Number(caps.maxPromptCharacters || 3072)
+        ) {
+          throw new BadRequestException(
+            'Prompt nhiều cảnh vượt giới hạn ký tự',
+          );
+        }
+      } else if (options.shots?.length) {
+        throw new BadRequestException(
+          'Chỉ gửi các shot khi bật chế độ tùy chỉnh',
+        );
       }
       check(options.referenceMode, caps.referenceModes, 'Chế độ ảnh');
       if (options.seed != null && options.seed !== '' && !caps.seed) {
@@ -232,6 +273,13 @@ export class PricingService {
     const options = request.options || {};
     const model = await this.catalog.find(request.modality, request.modelSlug);
     this.validateOptions(request.modality, model, options);
+    if (
+      request.modality === 'video' &&
+      options.customShots === true &&
+      prompt !== formatKlingShots(options.shots)
+    ) {
+      throw new BadRequestException('Nội dung shot không khớp với prompt');
+    }
 
     let minUsd = 0;
     let maxUsd = 0;

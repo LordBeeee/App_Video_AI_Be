@@ -68,6 +68,32 @@ describe('PricingService option validation', () => {
     ).toThrow(BadRequestException);
   });
 
+  it('validates custom shot count, descriptions and total duration', () => {
+    const caps = KLING_VIDEO_MODELS[1].capabilities;
+    const valid = {
+      multiShot: true,
+      customShots: true,
+      duration: 5,
+      shots: [
+        { prompt: 'Wide shot', duration: 2 },
+        { prompt: 'Close-up', duration: 3 },
+      ],
+    };
+    expect(() => validate('video', caps, valid)).not.toThrow();
+    expect(() => validate('video', caps, { ...valid, duration: 6 })).toThrow(
+      BadRequestException,
+    );
+    expect(() =>
+      validate('video', caps, {
+        ...valid,
+        shots: [{ prompt: '', duration: 5 }],
+      }),
+    ).toThrow(BadRequestException);
+    expect(() =>
+      validate('video', caps, { ...valid, multiShot: false }),
+    ).toThrow(BadRequestException);
+  });
+
   it('quotes Kling video from API units, not creator Credits', () => {
     const priced = new PricingService(
       {} as never,

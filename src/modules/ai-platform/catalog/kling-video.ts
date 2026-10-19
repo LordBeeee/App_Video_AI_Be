@@ -119,3 +119,14 @@ export const KLING_VIDEO_MODELS = [
 export function klingVideoModel(id: string) {
   return KLING_VIDEO_MODELS.find((model) => model.id === id);
 }
+
+export function formatKlingShots(
+  shots: { prompt: string; duration: number }[],
+) {
+  return shots
+    .map(
+      (shot, index) =>
+        `shot ${index + 1}, ${shot.duration}, ${shot.prompt.trim()};`,
+    )
+    .join(' ');
+}

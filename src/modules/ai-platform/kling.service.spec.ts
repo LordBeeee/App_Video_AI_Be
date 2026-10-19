@@ -33,6 +33,23 @@ describe('KlingService', () => {
     ]);
   });
 
+  it('submits custom shot prompt with multi-shot enabled', async () => {
+    request.mockResolvedValue({
+      data: { code: 0, data: { id: 'shot-job', status: 'submitted' } },
+    });
+    const prompt = 'shot 1, 2, Wide shot; shot 2, 3, Close-up;';
+    await service.submit(
+      'kling/kling-3.0',
+      prompt,
+      { duration: 5, resolution: '720p', multiShot: true },
+      ['https://example.com/first.png'],
+    );
+    const body = request.mock.calls[0][0].data;
+    expect(body.contents[0]).toEqual({ type: 'prompt', text: prompt });
+    expect(body.settings.multi_shot).toBe(true);
+    expect(body.settings.duration).toBe(5);
+  });
+
   it('submits O1 to Kling Omni Video with image references', async () => {
     request.mockResolvedValue({
       data: { code: 0, data: { task_id: 'job-2', task_status: 'submitted' } },
