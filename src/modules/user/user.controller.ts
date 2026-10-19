@@ -105,8 +105,8 @@ export class UserController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(1)
   @Get('expense-overview')
-  getExpenseOverview(@Query('days') days?: string) {
-    return this.statistics.getExpenseOverview(parseInt(days ?? '30'));
+  getExpenseOverview(@Query('days') days?: string, @Query('from') from?: string, @Query('to') to?: string) {
+    return this.statistics.getExpenseOverview(parseInt(days ?? '30'), from, to);
   }
 
   // ── Admin: thống kê toàn hệ thống ─────────────────────────────────────────
@@ -188,11 +188,25 @@ export class UserController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(1)
   @Get(':id/ai-usage')
-  getEmployeeAiUsage(@Param('id') id: string, @Query('days') days?: string) {
+  getEmployeeAiUsage(@Param('id') id: string, @Query('days') days?: string, @Query('from') from?: string, @Query('to') to?: string) {
     return this.statistics.getEmployeeAiUsage(
       parseInt(id),
       parseInt(days ?? '30'),
+      from,
+      to,
     );
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(1)
+  @Get(':id/ai-usage/timeline')
+  getEmployeeAiTimeline(
+    @Param('id') id: string,
+    @Query('days') days?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.statistics.getEmployeeAiTimeline(parseInt(id), parseInt(days ?? '30'), from, to);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
