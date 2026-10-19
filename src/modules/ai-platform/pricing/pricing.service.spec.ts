@@ -94,6 +94,28 @@ describe('PricingService option validation', () => {
     ).toThrow(BadRequestException);
   });
 
+  it('limits Ref Elements to Kling 3.0 and three unique assets', () => {
+    const validateElements = (modelId: string, ids: unknown) =>
+      (service as any).validateOptions(
+        'video',
+        {
+          id: modelId,
+          capabilities: KLING_VIDEO_MODELS[1].capabilities,
+        },
+        { elementAssetIds: ids },
+      );
+    expect(() => validateElements('kling/kling-3.0', [1, 2, 3])).not.toThrow();
+    expect(() => validateElements('kling/kling-3.0', [1, 2, 3, 4])).toThrow(
+      BadRequestException,
+    );
+    expect(() => validateElements('kling/kling-3.0', [1, 1])).toThrow(
+      BadRequestException,
+    );
+    expect(() => validateElements('kling/kling-3.0-omni', [1])).toThrow(
+      BadRequestException,
+    );
+  });
+
   it('quotes Kling video from API units, not creator Credits', () => {
     const priced = new PricingService(
       {} as never,

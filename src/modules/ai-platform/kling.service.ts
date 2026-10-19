@@ -494,6 +494,13 @@ export class KlingService {
           ...(references[1]
             ? [{ type: 'last_frame', url: references[1] }]
             : []),
+          ...(model.apiKind === 'standard' && Array.isArray(options.elementIds)
+            ? options.elementIds.map((elementId: string, index: number) => ({
+                type: 'element',
+                element_id: elementId,
+                id: `element_${options.elementAssetIds[index]}`,
+              }))
+            : []),
         ],
         settings:
           model.apiKind === 'turbo'

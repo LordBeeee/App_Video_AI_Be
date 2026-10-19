@@ -50,6 +50,29 @@ describe('KlingService', () => {
     expect(body.settings.duration).toBe(5);
   });
 
+  it('submits selected Kling 3.0 Elements with stable prompt ids', async () => {
+    request.mockResolvedValue({
+      data: { code: 0, data: { id: 'element-job', status: 'submitted' } },
+    });
+    await service.submit(
+      'kling/kling-3.0',
+      'The hero @element_21 waves',
+      {
+        duration: 5,
+        resolution: '720p',
+        elementAssetIds: [21, 34],
+        elementIds: ['kling-101', 'kling-102'],
+      },
+      ['https://example.com/first.png'],
+    );
+    expect(request.mock.calls[0][0].data.contents).toEqual([
+      { type: 'prompt', text: 'The hero @element_21 waves' },
+      { type: 'first_frame', url: 'https://example.com/first.png' },
+      { type: 'element', element_id: 'kling-101', id: 'element_21' },
+      { type: 'element', element_id: 'kling-102', id: 'element_34' },
+    ]);
+  });
+
   it('submits O1 to Kling Omni Video with image references', async () => {
     request.mockResolvedValue({
       data: { code: 0, data: { task_id: 'job-2', task_status: 'submitted' } },

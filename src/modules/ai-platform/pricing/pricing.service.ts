@@ -92,6 +92,21 @@ export class PricingService {
       checkImage('seed', 'seed', 'Seed');
     }
     if (modality === 'video') {
+      const elementAssetIds = options.elementAssetIds;
+      if (
+        elementAssetIds != null &&
+        (model.id !== 'kling/kling-3.0' ||
+          !Array.isArray(elementAssetIds) ||
+          elementAssetIds.length > 3 ||
+          elementAssetIds.some(
+            (id: unknown) => !Number.isSafeInteger(id) || Number(id) < 1,
+          ) ||
+          new Set(elementAssetIds).size !== elementAssetIds.length)
+      ) {
+        throw new BadRequestException(
+          'Ref Element chỉ hỗ trợ tối đa 3 mục cho Kling 3.0',
+        );
+      }
       check(options.resolution, caps.resolutions, 'Độ phân giải');
       check(options.aspectRatio, caps.aspectRatios, 'Tỷ lệ');
       check(options.size, caps.sizes, 'Kích thước');

@@ -187,6 +187,38 @@ export class GenerationsService {
     if (quote.modality === 'video' && suppliedReferenceCount === 0) {
       throw new BadRequestException('Vui lòng tải ít nhất một ảnh');
     }
+    const elementAssetIds: number[] =
+      quote.request?.options?.elementAssetIds || [];
+    if (elementAssetIds.length && quote.modelSlug !== 'kling/kling-3.0') {
+      throw new BadRequestException('Model không hỗ trợ Ref Element');
+    }
+    const elementAssets = elementAssetIds.length
+      ? await this.assets.find({ where: { id: In(elementAssetIds), userId } })
+      : [];
+    const elementById = new Map(
+      elementAssets.map((asset) => [Number(asset.id), asset]),
+    );
+    const elementIds = elementAssetIds.map((id) => {
+      const asset = elementById.get(id);
+      const meta = asset?.metadata as Record<string, unknown> | undefined;
+      if (
+        !asset ||
+        asset.sourceType !== 'reference' ||
+        asset.assetRole !== 'element' ||
+        meta?.provider !== 'Kling AI' ||
+        meta?.referenceType !== 'image' ||
+        meta?.status !== 'succeed' ||
+        !meta?.elementId ||
+        ['submitting', 'submitted', 'processing', 'succeed'].includes(
+          String(meta?.deleteStatus || ''),
+        )
+      ) {
+        throw new BadRequestException(
+          'Ref Element không tồn tại hoặc chưa sẵn sàng',
+        );
+      }
+      return String(meta.elementId);
+    });
     const hold = await this.wallets.hold(
       userId,
       quote.id,
@@ -200,6 +232,7 @@ export class GenerationsService {
       referenceUrls: orderedReferences.length
         ? orderedReferences.map((asset) => asset.storedUrl)
         : referenceUrls,
+      elementIds,
     };
     let generation = await this.generations.save(
       this.generations.create({
