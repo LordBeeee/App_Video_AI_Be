@@ -133,11 +133,12 @@ export class StatisticsService {
       monthlySpending: Number(rows[0]?.monthly_spending ?? 0),
     };
   }
-  async getExpenseOverview(daysInput: number) {
-    const days = Math.min(Math.max(Math.trunc(daysInput) || 30, 1), 365);
+  async getExpenseOverview(daysInput: number, from?: string, to?: string) {
+    const r = this.rangeOf(daysInput, from, to);
+    const days = r.days;
     const tz = 'Asia/Ho_Chi_Minh';
-    const range = `g.created_at >= (date_trunc('day', now() AT TIME ZONE '${tz}') - ($1::int - 1) * interval '1 day') AT TIME ZONE '${tz}'`;
-    const [kpiRows, trend, byModel, byTask, byEmployee] = await Promise.all([
+    const range = `g.created_at >= (${r.end} - ($1::int - 1) * interval '1 day') AT TIME ZONE '${tz}' AND g.created_at < (${r.end} + interval '1 day') AT TIME ZONE '${tz}'`;
+    const [kpiRows, trend, byModel, byTask, byEmployee, dayTask] = await Promise.all([
       this.dataSource.query(
         `SELECT COALESCE(SUM(g.charged_vnd) FILTER (WHERE g.status = 'succeeded'), 0)::bigint AS total_cost,
           COUNT(*)::int AS total_requests,
@@ -153,8 +154,8 @@ export class StatisticsService {
           COALESCE(SUM(g.charged_vnd), 0)::bigint AS cost,
           COUNT(g.id)::int AS requests
          FROM generate_series(
-           date_trunc('day', now() AT TIME ZONE '${tz}') - ($1::int - 1) * interval '1 day',
-           date_trunc('day', now() AT TIME ZONE '${tz}'), interval '1 day') AS d(day)
+           ${r.end} - ($1::int - 1) * interval '1 day',
+           ${r.end}, interval '1 day') AS d(day)
          LEFT JOIN (
            SELECT g.id, g.charged_vnd, date_trunc('day', g.created_at AT TIME ZONE '${tz}') AS day
            FROM ai_generations g JOIN users u ON u.id = g.user_id
@@ -188,6 +189,10 @@ export class StatisticsService {
           COALESCE(SUM(g.charged_vnd) FILTER (WHERE g.status = 'succeeded' AND g.modality = 'image'), 0)::bigint AS cost_image,
           COALESCE(SUM(g.charged_vnd) FILTER (WHERE g.status = 'succeeded' AND g.modality = 'video'), 0)::bigint AS cost_video,
           COALESCE(SUM(g.charged_vnd) FILTER (WHERE g.status = 'succeeded' AND g.modality = 'audio'), 0)::bigint AS cost_audio,
+          COUNT(g.id) FILTER (WHERE g.status = 'succeeded' AND g.modality = 'chat')::int AS req_chat,
+          COUNT(g.id) FILTER (WHERE g.status = 'succeeded' AND g.modality = 'image')::int AS req_image,
+          COUNT(g.id) FILTER (WHERE g.status = 'succeeded' AND g.modality = 'video')::int AS req_video,
+          COUNT(g.id) FILTER (WHERE g.status = 'succeeded' AND g.modality = 'audio')::int AS req_audio,
           MAX(g.created_at) AS last_used_at
          FROM users u
          LEFT JOIN ai_generations g ON g.user_id = u.id AND ${range}
@@ -195,13 +200,23 @@ export class StatisticsService {
          GROUP BY u.id ORDER BY cost DESC, u.id`,
         [days],
       ),
+      this.dataSource.query(
+        `SELECT to_char(date_trunc('day', g.created_at AT TIME ZONE '${tz}'), 'YYYY-MM-DD') AS day,
+          g.modality, COUNT(*)::int AS requests, COALESCE(SUM(g.charged_vnd), 0)::bigint AS cost
+         FROM ai_generations g JOIN users u ON u.id = g.user_id
+         WHERE u.role_id = 2 AND g.status = 'succeeded' AND ${range}
+         GROUP BY 1, 2`,
+        [days],
+      ),
     ]);
-    const efficiency = await this.efficiency(days);
+    const efficiency = await this.efficiency(r);
+    const hourly = days === 1 ? await this.hourly(r) : [];
     const k = kpiRows[0] ?? {};
     const totalCost = Number(k.total_cost ?? 0);
     const succeeded = Number(k.succeeded ?? 0);
     return {
       days,
+      hourly,
       efficiency,
       kpis: {
         totalCost,
@@ -227,6 +242,7 @@ export class StatisticsService {
         requests: Number(r.requests),
         cost: Number(r.cost),
       })),
+      trendByTask: this.mergeDayTask(trend, dayTask),
       employees: byEmployee.map((r: any) => ({
         id: Number(r.id),
         fullName: r.full_name,
@@ -243,21 +259,38 @@ export class StatisticsService {
           video: Number(r.cost_video),
           audio: Number(r.cost_audio),
         },
+        requestsByTask: {
+          chat: Number(r.req_chat),
+          image: Number(r.req_image),
+          video: Number(r.req_video),
+          audio: Number(r.req_audio),
+        },
         lastUsedAt: r.last_used_at,
       })),
     };
   }
-  async getEmployeeAiUsage(userId: number, daysInput: number) {
-    const days = Math.min(Math.max(Math.trunc(daysInput) || 30, 1), 365);
+  private mergeDayTask(trend: Array<{ day: string }>, rows: any[]) {
+    const map = new Map<string, Record<string, { requests: number; cost: number }>>();
+    rows.forEach((r: any) => {
+      const day = map.get(r.day) ?? {};
+      day[r.modality] = { requests: Number(r.requests), cost: Number(r.cost) };
+      map.set(r.day, day);
+    });
+    return trend.map((t) => ({ day: t.day, tasks: map.get(t.day) ?? {} }));
+  }
+
+  async getEmployeeAiUsage(userId: number, daysInput: number, from?: string, to?: string) {
+    const r = this.rangeOf(daysInput, from, to);
+    const days = r.days;
     const tz = 'Asia/Ho_Chi_Minh';
-    const range = `g.created_at >= (date_trunc('day', now() AT TIME ZONE '${tz}') - ($2::int - 1) * interval '1 day') AT TIME ZONE '${tz}'`;
+    const range = `g.created_at >= (${r.end} - ($2::int - 1) * interval '1 day') AT TIME ZONE '${tz}' AND g.created_at < (${r.end} + interval '1 day') AT TIME ZONE '${tz}'`;
     const [user] = await this.dataSource.query(
       `SELECT id, full_name, email, avatar_url, status, last_login_at
        FROM users WHERE id = $1 AND role_id = 2`,
       [userId],
     );
     if (!user) throw new NotFoundException('Không tìm thấy nhân viên');
-    const [kpiRows, trend, byModel, byTask, teamModel, teamTask] =
+    const [kpiRows, trend, byModel, byTask, teamModel, teamTask, dayTask] =
       await Promise.all([
         this.dataSource.query(
           `SELECT COUNT(*)::int AS requests,
@@ -275,8 +308,8 @@ export class StatisticsService {
             COUNT(g.id)::int AS requests,
             COUNT(g.id) FILTER (WHERE g.status = 'failed')::int AS failed
            FROM generate_series(
-             date_trunc('day', now() AT TIME ZONE '${tz}') - ($2::int - 1) * interval '1 day',
-             date_trunc('day', now() AT TIME ZONE '${tz}'), interval '1 day') AS d(day)
+             ${r.end} - ($2::int - 1) * interval '1 day',
+             ${r.end}, interval '1 day') AS d(day)
            LEFT JOIN (
              SELECT g.id, g.status, g.charged_vnd, date_trunc('day', g.created_at AT TIME ZONE '${tz}') AS day
              FROM ai_generations g WHERE g.user_id = $1 AND ${range}
@@ -314,10 +347,18 @@ export class StatisticsService {
            GROUP BY 1`,
           [userId, days],
         ),
+        this.dataSource.query(
+          `SELECT to_char(date_trunc('day', g.created_at AT TIME ZONE '${tz}'), 'YYYY-MM-DD') AS day,
+            g.modality, COUNT(*)::int AS requests, COALESCE(SUM(g.charged_vnd), 0)::bigint AS cost
+           FROM ai_generations g
+           WHERE g.user_id = $1 AND g.status = 'succeeded' AND ${range}
+           GROUP BY 1, 2`,
+          [userId, days],
+        ),
       ]);
     const [efficiency, team] = await Promise.all([
-      this.efficiency(days, userId),
-      this.effSummary(days),
+      this.efficiency(r, userId),
+      this.effSummary(r),
     ]);
     const k = kpiRows[0] ?? {};
     const cost = Number(k.cost ?? 0);
@@ -347,8 +388,10 @@ export class StatisticsService {
       teamRequests: team?.requests ?? 0,
       teamAvgCost: team?.requests ? Math.round(team.cost / team.requests) : null,
     });
+    const hourly = days === 1 ? await this.hourly(r, userId) : [];
     return {
       days,
+      hourly,
       efficiency: { ...efficiency, team },
       employee: {
         id: Number(user.id),
@@ -383,6 +426,7 @@ export class StatisticsService {
         modality: r.modality,
         ...withCompare(r, teamTaskMap.get(r.modality)),
       })),
+      trendByTask: this.mergeDayTask(trend, dayTask),
     };
   }
 
@@ -443,26 +487,59 @@ export class StatisticsService {
     };
   }
 
-  private effScope(userId?: number) {
+  private rangeOf(daysInput: number, from?: string, to?: string) {
+    const tz = 'Asia/Ho_Chi_Minh';
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: tz });
+    const ok = (v?: string) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v));
+    if (ok(from) && ok(to)) {
+      const end = to! > today ? today : to!;
+      if (from! <= end) {
+        const span = Math.round((Date.parse(end) - Date.parse(from!)) / 86400000) + 1;
+        if (span <= 366) return { days: span, end: `'${end}'::timestamp` };
+      }
+    }
+    const days = Math.min(Math.max(Math.trunc(daysInput) || 30, 1), 365);
+    return { days, end: `date_trunc('day', now() AT TIME ZONE '${tz}')` };
+  }
+
+  private async hourly(r: { days: number; end: string }, userId?: number) {
+    const s = this.effScope(r, userId);
+    const rows = await this.dataSource.query(
+      `SELECT h.hr::int AS hr,
+        COALESCE(SUM(g.charged_vnd) FILTER (WHERE g.status = 'succeeded'), 0)::bigint AS cost,
+        COUNT(g.id)::int AS requests
+       FROM generate_series(0, 23) AS h(hr)
+       LEFT JOIN (
+         SELECT g.id, g.status, g.charged_vnd, EXTRACT(HOUR FROM g.created_at AT TIME ZONE '${s.tz}')::int AS hr
+         ${s.base}
+       ) g ON g.hr = h.hr
+       GROUP BY h.hr ORDER BY h.hr`,
+      s.params(),
+    );
+    return rows.map((x: any) => ({ hr: Number(x.hr), cost: Number(x.cost), requests: Number(x.requests) }));
+  }
+
+  private effScope(r: { days: number; end: string }, userId?: number) {
     const tz = 'Asia/Ho_Chi_Minh';
     return {
       tz,
-      params: (days: number) => (userId ? [days, userId] : [days]),
+      params: () => (userId ? [r.days, userId] : [r.days]),
       base: `FROM ai_generations g JOIN users u ON u.id = g.user_id
         WHERE ${userId ? 'g.user_id = $2' : 'u.role_id = 2'}
-          AND g.created_at >= (date_trunc('day', now() AT TIME ZONE '${tz}') - ($1::int - 1) * interval '1 day') AT TIME ZONE '${tz}'`,
+          AND g.created_at >= (${r.end} - ($1::int - 1) * interval '1 day') AT TIME ZONE '${tz}'
+          AND g.created_at < (${r.end} + interval '1 day') AT TIME ZONE '${tz}'`,
     };
   }
 
-  private async effSummary(days: number, userId?: number) {
-    const s = this.effScope(userId);
+  private async effSummary(rg: { days: number; end: string }, userId?: number) {
+    const s = this.effScope(rg, userId);
     const [r] = await this.dataSource.query(
       `SELECT COUNT(*)::int AS total,
         COUNT(*) FILTER (WHERE g.status = 'succeeded')::int AS ok,
         COUNT(DISTINCT (g.user_id, lower(btrim(g.prompt))))::int AS uniq,
         COALESCE(SUM(g.charged_vnd) FILTER (WHERE g.status = 'succeeded'), 0)::bigint AS cost
        ${s.base} AND g.status IN ('succeeded', 'failed')`,
-      s.params(days),
+      s.params(),
     );
     const total = Number(r?.total ?? 0);
     const ok = Number(r?.ok ?? 0);
@@ -475,13 +552,13 @@ export class StatisticsService {
     };
   }
 
-  private async efficiency(days: number, userId?: number) {
-    const s = this.effScope(userId);
-    const p = s.params(days);
+  private async efficiency(r: { days: number; end: string }, userId?: number) {
+    const s = this.effScope(r, userId);
+    const p = s.params();
     const done = `g.status IN ('succeeded', 'failed')`;
     const [summary, heat, daily, latency, models, reasons, people] =
       await Promise.all([
-        this.effSummary(days, userId),
+        this.effSummary(r, userId),
         this.dataSource.query(
           `SELECT EXTRACT(ISODOW FROM g.created_at AT TIME ZONE '${s.tz}')::int AS dow,
             EXTRACT(HOUR FROM g.created_at AT TIME ZONE '${s.tz}')::int AS hr,
@@ -495,8 +572,8 @@ export class StatisticsService {
             COUNT(g.id) FILTER (WHERE g.status = 'failed')::int AS failed,
             COALESCE(SUM(g.charged_vnd) FILTER (WHERE g.status = 'succeeded'), 0)::bigint AS cost
            FROM generate_series(
-             date_trunc('day', now() AT TIME ZONE '${s.tz}') - ($1::int - 1) * interval '1 day',
-             date_trunc('day', now() AT TIME ZONE '${s.tz}'), interval '1 day') AS d(day)
+             ${r.end} - ($1::int - 1) * interval '1 day',
+             ${r.end}, interval '1 day') AS d(day)
            LEFT JOIN (
              SELECT g.id, g.status, g.charged_vnd, date_trunc('day', g.created_at AT TIME ZONE '${s.tz}') AS day
              ${s.base} AND ${done}
@@ -582,6 +659,33 @@ export class StatisticsService {
           ? (Number(r.total) - Number(r.uniq)) / Number(r.total)
           : null,
         cost: Number(r.cost),
+      })),
+    };
+  }
+
+  async getEmployeeAiTimeline(userId: number, daysInput: number, from?: string, to?: string) {
+    const r = this.rangeOf(daysInput, from, to);
+    const s = this.effScope(r, userId);
+    const rows = await this.dataSource.query(
+      `SELECT g.id, g.modality, g.status,
+        COALESCE(g.model_name_snapshot, g.model_slug) AS model,
+        g.charged_vnd,
+        to_char(g.created_at AT TIME ZONE '${s.tz}', 'YYYY-MM-DD') AS day,
+        (EXTRACT(EPOCH FROM (g.created_at AT TIME ZONE '${s.tz}') - date_trunc('day', g.created_at AT TIME ZONE '${s.tz}')) / 60)::int AS minute,
+        CASE WHEN g.completed_at IS NOT NULL THEN EXTRACT(EPOCH FROM (g.completed_at - g.created_at))::int END AS sec
+       ${s.base} ORDER BY g.created_at LIMIT 3000`,
+      s.params(),
+    );
+    return {
+      items: rows.map((x: any) => ({
+        id: x.id,
+        day: x.day,
+        minute: Number(x.minute),
+        sec: x.sec === null ? null : Number(x.sec),
+        modality: x.modality,
+        status: x.status,
+        model: x.model,
+        cost: x.charged_vnd === null ? 0 : Number(x.charged_vnd),
       })),
     };
   }
