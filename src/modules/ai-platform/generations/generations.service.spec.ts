@@ -26,7 +26,7 @@ describe('GenerationsService Kling Ref validation', () => {
       find: jest
         .fn()
         .mockResolvedValue({
-          capabilities: { maxReferenceImages: 2, maxPromptCharacters: 3072 },
+          capabilities: { maxReferenceImages: 2, maxPromptCharacters: 2500 },
         }),
     } as never,
     wallets as never,
@@ -40,6 +40,17 @@ describe('GenerationsService Kling Ref validation', () => {
   beforeEach(() => {
     assets.find.mockReset();
     wallets.hold.mockReset();
+  });
+
+  it('rejects prompts longer than the Kling 3.0 product limit', async () => {
+    await expect(
+      service.create(7, {
+        quoteId: 'quote-1',
+        prompt: 'x'.repeat(2501),
+        referenceAssetIds: [1],
+      }),
+    ).rejects.toThrow('Prompt vượt giới hạn ký tự');
+    expect(wallets.hold).not.toHaveBeenCalled();
   });
 
   it('rejects an Element outside the user account before reserving payment', async () => {

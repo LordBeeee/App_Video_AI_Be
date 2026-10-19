@@ -149,6 +149,23 @@ describe('PricingService option validation', () => {
     ).toBe(0);
   });
 
+  it('limits Kling 3.0 prompts to 2500 characters when quoting', async () => {
+    const standard = KLING_VIDEO_MODELS[1];
+    expect(standard.capabilities.maxPromptCharacters).toBe(2500);
+    const pricing = new PricingService(
+      {} as never,
+      { find: async () => standard } as never,
+      {} as never,
+      {} as never,
+    );
+    await expect(pricing.createQuote(1, {
+      modality: 'video',
+      modelSlug: standard.id,
+      prompt: 'x'.repeat(2501),
+      options: { duration: 5, resolution: '720p' },
+    })).rejects.toThrow('Prompt vượt giới hạn ký tự');
+  });
+
   it('accepts a quote when generation trims surrounding prompt whitespace', async () => {
     let savedQuote: any;
     const quotes = {

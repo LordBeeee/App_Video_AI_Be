@@ -290,6 +290,12 @@ export class PricingService {
     this.validateOptions(request.modality, model, options);
     if (
       request.modality === 'video' &&
+      prompt.length > Number(model.capabilities?.maxPromptCharacters || 2500)
+    ) {
+      throw new BadRequestException('Prompt vượt giới hạn ký tự của model Kling');
+    }
+    if (
+      request.modality === 'video' &&
       options.customShots === true &&
       prompt !== formatKlingShots(options.shots)
     ) {
