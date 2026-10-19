@@ -149,6 +149,30 @@ describe('KlingService', () => {
     });
   });
 
+  it('submits prompt-only Omni without an image', async () => {
+    request.mockResolvedValue({ data: { code: 0, data: { id: 'text-job' } } });
+    await service.submit('kling/kling-3.0-omni', 'a quiet street', {
+      duration: 5, referenceInputs: [], aspectRatio: '9:16',
+    }, []);
+    const body = request.mock.calls[0][0].data;
+    expect(body.contents).toEqual([{ type: 'prompt', text: 'a quiet street' }]);
+    expect(body.settings.aspect_ratio).toBe('9:16');
+  });
+
+  it('submits a base video with its original sound', async () => {
+    request.mockResolvedValue({ data: { code: 0, data: { id: 'edit-job' } } });
+    await service.submit('kling/kling-3.0-omni', 'change the background', {
+      duration: 5, audioMode: 'original', referenceInputs: [{
+        type: 'base_video', id: 'video_1', url: 'https://example.com/base.mp4',
+      }],
+    }, []);
+    const body = request.mock.calls[0][0].data;
+    expect(body.contents[1]).toEqual({
+      type: 'base_video', id: 'video_1', url: 'https://example.com/base.mp4',
+    });
+    expect(body.settings.audio).toBe('original');
+  });
+
   it('does not send unsupported audio and multi-shot settings to Turbo', async () => {
     request.mockResolvedValue({
       data: { code: 0, data: { id: 'turbo-1', status: 'submitted' } },

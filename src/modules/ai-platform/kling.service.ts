@@ -431,11 +431,11 @@ export class KlingService {
   ) {
     const model = klingVideoModel(modelId);
     if (!model) throw new BadRequestException('Model Kling không hợp lệ');
-    if (!references.length)
+    if (!references.length && model.apiKind !== 'omni_new')
       throw new BadRequestException('Cần ít nhất một ảnh để tạo video');
     const duration = Number(options.duration || 5);
     const resolution = String(options.resolution || '720p');
-    const audio = options.generateAudio ? 'native' : 'off';
+    const audio = options.audioMode || (options.generateAudio ? 'native' : 'off');
     const referenceMode =
       options.referenceMode === 'refer_image' ? 'refer_image' : 'first_frame';
     let path: string;
@@ -466,19 +466,30 @@ export class KlingService {
       };
     } else if (model.apiKind === 'omni_new') {
       path = '/omni-video/kling-3.0-omni';
+      const omniInputs = Array.isArray(options.referenceInputs)
+        ? options.referenceInputs
+        : undefined;
+      const needsAspectRatio = omniInputs
+        ? !omniInputs.some((input: any) =>
+            input.type === 'first_frame' || input.type.endsWith('_video'),
+          )
+        : referenceMode === 'refer_image';
       body = {
         contents: [
           { type: 'prompt', text: prompt },
-          ...references.map((url, index) => ({
-            type:
-              referenceMode === 'refer_image'
-                ? 'refer_image'
-                : index === 0
-                  ? 'first_frame'
-                  : 'last_frame',
-            url,
-            id: `image_${index + 1}`,
-          })),
+          ...(omniInputs
+            ? omniInputs.map((input: any) => ({
+                type: input.type,
+                url: input.url,
+                id: input.id,
+              }))
+            : references.map((url, index) => ({
+                type: referenceMode === 'refer_image'
+                  ? 'refer_image'
+                  : index === 0 ? 'first_frame' : 'last_frame',
+                url,
+                id: `image_${index + 1}`,
+              }))),
           ...(Array.isArray(options.elementIds)
             ? options.elementIds.map((elementId: string, index: number) => ({
                 type: 'element',
@@ -492,7 +503,7 @@ export class KlingService {
           resolution,
           audio,
           multi_shot: !!options.multiShot,
-          ...(referenceMode === 'refer_image'
+          ...(needsAspectRatio
             ? { aspect_ratio: options.aspectRatio || '16:9' }
             : {}),
         },

@@ -92,6 +92,47 @@ export class PricingService {
       checkImage('seed', 'seed', 'Seed');
     }
     if (modality === 'video') {
+      const omniInputs = options.referenceInputs;
+      if (omniInputs != null) {
+        if (
+          model.id !== 'kling/kling-3.0-omni' ||
+          !Array.isArray(omniInputs) ||
+          omniInputs.length > 8 ||
+          omniInputs.some(
+            (input: any) =>
+              !input ||
+              !Number.isSafeInteger(input.assetId) ||
+              input.assetId < 1 ||
+              ![
+                'first_frame',
+                'last_frame',
+                'refer_image',
+                'feature_video',
+                'base_video',
+              ].includes(input.type),
+          ) ||
+          new Set(omniInputs.map((input: any) => input.assetId)).size !==
+            omniInputs.length
+        ) {
+          throw new BadRequestException('Tài nguyên tham chiếu Omni không hợp lệ');
+        }
+        const types = omniInputs.map((input: any) => input.type);
+        const videos = types.filter((type: string) => type.endsWith('_video'));
+        if (
+          videos.length > 1 ||
+          types.filter((type: string) => type === 'first_frame').length > 1 ||
+          types.filter((type: string) => type === 'last_frame').length > 1 ||
+          (types.includes('last_frame') && !types.includes('first_frame')) ||
+          (videos.includes('base_video') &&
+            (types.includes('first_frame') || types.includes('last_frame'))) ||
+          (videos.includes('base_video') && options.multiShot === true) ||
+          (videos.includes('feature_video') && options.multiShot !== true) ||
+          (videos.length && options.generateAudio === true) ||
+          (options.audioMode === 'original' && !videos.includes('base_video'))
+        ) {
+          throw new BadRequestException('Tổ hợp tham chiếu Omni không được hỗ trợ');
+        }
+      }
       const elementAssetIds = options.elementAssetIds;
       if (
         elementAssetIds != null &&
@@ -118,6 +159,13 @@ export class PricingService {
       }
       if (options.generateAudio === true && !caps.generateAudio) {
         throw new BadRequestException('Model không hỗ trợ tạo âm thanh');
+      }
+      if (options.audioMode != null &&
+          (model.id !== 'kling/kling-3.0-omni' ||
+            !['off', 'native', 'original'].includes(options.audioMode) ||
+            (options.audioMode === 'native' && options.generateAudio !== true) ||
+            (options.audioMode === 'off' && options.generateAudio === true))) {
+        throw new BadRequestException('Chế độ âm thanh không hợp lệ');
       }
       if (options.multiShot === true && !caps.multiShot) {
         throw new BadRequestException('Model không hỗ trợ chế độ nhiều cảnh');
@@ -214,9 +262,14 @@ export class PricingService {
             : model.capabilities.durations[0]),
       );
       const rate = model.pricing.perSecond[resolution];
+      const hasVideoInput = model.id === 'kling/kling-3.0-omni' &&
+        options.referenceInputs?.some((input: any) =>
+          ['feature_video', 'base_video'].includes(input.type));
       const unitsPerSecond = Number(
         rate?.[
-          model.capabilities.nativeAudioIncluded
+          hasVideoInput
+            ? 'withVideo'
+            : model.capabilities.nativeAudioIncluded
             ? 'includedAudio'
             : options.generateAudio
               ? 'withAudio'

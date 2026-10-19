@@ -117,6 +117,25 @@ describe('PricingService option validation', () => {
     );
   });
 
+  it('validates Omni video input combinations before quoting', () => {
+    const validateOmni = (options: Record<string, any>) =>
+      (service as any).validateOptions('video', KLING_VIDEO_MODELS[2], options);
+    expect(() => validateOmni({ referenceInputs: [] })).not.toThrow();
+    expect(() => validateOmni({ referenceInputs: [
+      { assetId: 1, type: 'first_frame' },
+      { assetId: 2, type: 'refer_image' },
+    ] })).not.toThrow();
+    expect(() => validateOmni({ referenceInputs: [
+      { assetId: 1, type: 'last_frame' },
+    ] })).toThrow(BadRequestException);
+    expect(() => validateOmni({ referenceInputs: [
+      { assetId: 1, type: 'feature_video' },
+    ], multiShot: false })).toThrow(BadRequestException);
+    expect(() => validateOmni({ referenceInputs: [
+      { assetId: 1, type: 'base_video' },
+    ], audioMode: 'original', multiShot: false })).not.toThrow();
+  });
+
   it('quotes Kling video from API units, not creator Credits', () => {
     const priced = new PricingService(
       {} as never,
@@ -148,6 +167,11 @@ describe('PricingService option validation', () => {
         resolution: '720p',
       }),
     ).toBe(0);
+    expect((priced as any).videoCost(KLING_VIDEO_MODELS[2], {
+      duration: 5,
+      resolution: '1080p',
+      referenceInputs: [{ assetId: 1, type: 'base_video' }],
+    })).toBeCloseTo(0.84);
   });
 
   it('limits Kling 3.0 prompts to 2500 characters when quoting', async () => {

@@ -26,6 +26,7 @@ interface CreateGenerationBody {
   projectId?: number;
   referenceUrls?: string[];
   referenceAssetIds?: number[];
+  elementAssetIds?: number[];
 }
 
 @Injectable()
@@ -94,6 +95,18 @@ export class GenerationsService {
       quote.modality,
       quote.modelSlug,
     );
+    const isOmni = quote.modelSlug === 'kling/kling-3.0-omni';
+    const omniInputs: { assetId: number; type: string }[] = isOmni
+      ? quote.request?.options?.referenceInputs || []
+      : [];
+    if (isOmni && JSON.stringify(body.referenceAssetIds || []) !==
+        JSON.stringify(omniInputs.map((input) => input.assetId))) {
+      throw new BadRequestException('Tài nguyên đã thay đổi, vui lòng lấy báo giá mới');
+    }
+    if (isOmni && JSON.stringify(body.elementAssetIds || []) !==
+        JSON.stringify(quote.request?.options?.elementAssetIds || [])) {
+      throw new BadRequestException('Element đã thay đổi, vui lòng lấy báo giá mới');
+    }
     if (
       quote.modality === 'video' &&
       prompt.length >
@@ -114,31 +127,31 @@ export class GenerationsService {
           : 0;
     const referenceAssetIds = Array.from(
       new Set(
-        (body.referenceAssetIds || [])
+        (isOmni ? omniInputs.map((input) => input.assetId) : body.referenceAssetIds || [])
           .map(Number)
           .filter((id) => Number.isSafeInteger(id) && id > 0),
       ),
     );
     const referenceUrls = Array.from(
       new Set(
-        (body.referenceUrls || []).filter((url) => typeof url === 'string'),
+        (isOmni ? [] : body.referenceUrls || []).filter((url) => typeof url === 'string'),
       ),
     );
     const suppliedReferenceCount = referenceAssetIds.length
       ? referenceAssetIds.length
       : referenceUrls.length;
-    if (quote.modality === 'video' && !referenceAssetIds.length) {
+    if (quote.modality === 'video' && !isOmni && !referenceAssetIds.length) {
       throw new BadRequestException(
         'Vui lòng tải ảnh lên thư viện trước khi tạo video',
       );
     }
-    if (suppliedReferenceCount > referenceLimit) {
+    if (suppliedReferenceCount > referenceLimit + (isOmni ? 1 : 0)) {
       throw new BadRequestException(
         `Model chỉ hỗ trợ tối đa ${referenceLimit} ảnh tham chiếu`,
       );
     }
     if (
-      quote.modality === 'video' &&
+      quote.modality === 'video' && !isOmni &&
       (quote.request?.options?.referenceMode || 'first_frame') ===
         'first_frame' &&
       suppliedReferenceCount > 2
@@ -161,30 +174,42 @@ export class GenerationsService {
     const orderedReferences = referenceAssetIds
       .map((id) => referenceById.get(id))
       .filter((asset): asset is Asset => Boolean(asset));
-    if (
-      quote.modality === 'video' &&
-      orderedReferences.some(
-        (asset) =>
-          asset.assetType !== 'image' ||
+    const invalidReference = quote.modality === 'video' &&
+      orderedReferences.some((asset) => {
+        const type = isOmni
+          ? omniInputs.find((input) => input.assetId === Number(asset.id))?.type
+          : 'first_frame';
+        if (type?.endsWith('_video')) {
+          const seconds = Number(
+            (asset.metadata as Record<string, any>)?.mediaDurationSeconds ??
+              asset.durationSeconds,
+          );
+          return asset.assetType !== 'video' ||
+            !['video/mp4', 'video/quicktime'].includes(asset.mimeType || '') ||
+            !Number.isFinite(seconds) || seconds < 3 || seconds > 15.5 ||
+            (asset.fileSizeBytes != null && asset.fileSizeBytes > 200_000_000) ||
+            asset.width == null || asset.height == null ||
+            asset.width < 700 || asset.height < 700 ||
+            asset.width > 4553 || asset.height > 4553 ||
+            asset.width * asset.height > 8294400 ||
+            asset.width / asset.height < 0.4 || asset.width / asset.height > 2 ||
+            asset.fps == null || asset.fps < 24 || asset.fps > 60;
+        }
+        return asset.assetType !== 'image' ||
           !['image/jpeg', 'image/png'].includes(asset.mimeType || '') ||
           (asset.width != null && asset.width < 300) ||
           (asset.height != null && asset.height < 300) ||
-          (asset.width != null &&
-            asset.height != null &&
-            (asset.width / asset.height < 0.4 ||
-              asset.width / asset.height > 2.5)) ||
+          (asset.width != null && asset.height != null &&
+            (asset.width / asset.height < 0.4 || asset.width / asset.height > 2.5)) ||
           (asset.fileSizeBytes != null &&
-            asset.fileSizeBytes >
-              Number(catalogModel.capabilities?.maxImageMb || 10) *
-                1024 *
-                1024),
-      )
-    ) {
+            asset.fileSizeBytes > Number(catalogModel.capabilities?.maxImageMb || 10) * 1024 * 1024);
+      });
+    if (invalidReference) {
       throw new BadRequestException(
-        `Ảnh Kling phải là JPG/PNG, tối thiểu 300px, tỷ lệ 1:2.5–2.5:1 và không quá ${catalogModel.capabilities?.maxImageMb || 10}MB`,
+        'Ảnh hoặc video tham chiếu không đáp ứng yêu cầu của Kling',
       );
     }
-    if (quote.modality === 'video' && suppliedReferenceCount === 0) {
+    if (quote.modality === 'video' && !isOmni && suppliedReferenceCount === 0) {
       throw new BadRequestException('Vui lòng tải ít nhất một ảnh');
     }
     const elementAssetIds: number[] =
@@ -226,16 +251,19 @@ export class GenerationsService {
       return String(meta.elementId);
     });
     if (
-      quote.modelSlug === 'kling/kling-3.0-omni' &&
-      quote.request?.options?.referenceMode === 'refer_image'
+      isOmni
     ) {
       const videoElements = elementAssets.filter(
         (asset) =>
           (asset.metadata as Record<string, any>)?.elementType === 'video',
       ).length;
       const imageElements = elementAssets.length - videoElements;
-      const imageLimit = videoElements ? 4 : 7;
-      if (suppliedReferenceCount + imageElements > imageLimit) {
+      const hasReferenceVideo = omniInputs.some((input) => input.type.endsWith('_video'));
+      const imageCount = omniInputs.filter((input) => !input.type.endsWith('_video')).length;
+      const imageLimit = hasReferenceVideo || videoElements ? 4 : 7;
+      if (videoElements > (hasReferenceVideo ? 1 : 3) ||
+          (hasReferenceVideo && videoElements > 0 && (imageElements > 0 || imageCount > 0)) ||
+          imageCount + imageElements > imageLimit) {
         throw new BadRequestException(
           `Omni chỉ hỗ trợ tối đa ${imageLimit} ảnh và Element ảnh trong chế độ ảnh tham chiếu`,
         );
@@ -249,12 +277,19 @@ export class GenerationsService {
     quote.consumedAt = new Date();
     await this.quotes.save(quote);
 
+    let imageNumber = 0;
+    const resolvedOmniInputs = omniInputs.map((input) => ({
+      type: input.type,
+      url: referenceById.get(input.assetId)!.storedUrl,
+      id: input.type.endsWith('_video') ? 'video_1' : `image_${++imageNumber}`,
+    }));
     const options = {
       ...(quote.request?.options || {}),
       referenceUrls: orderedReferences.length
         ? orderedReferences.map((asset) => asset.storedUrl)
         : referenceUrls,
       elementIds,
+      ...(isOmni ? { referenceInputs: resolvedOmniInputs } : {}),
     };
     let generation = await this.generations.save(
       this.generations.create({

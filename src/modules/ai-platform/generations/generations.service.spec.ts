@@ -87,3 +87,39 @@ describe('GenerationsService Kling Element validation', () => {
     expect(wallets.hold).not.toHaveBeenCalled();
   });
 });
+
+describe('GenerationsService Omni asset checks', () => {
+  const quote = {
+    id: 'omni-quote',
+    modality: 'video',
+    modelSlug: 'kling/kling-3.0-omni',
+    request: { options: {
+      referenceInputs: [{ assetId: 9, type: 'base_video' }],
+      elementAssetIds: [],
+    } },
+  };
+  const assets = { find: jest.fn() };
+  const wallets = { hold: jest.fn() };
+  const service = new GenerationsService(
+    {} as never, {} as never, {} as never, assets as never,
+    { getValidQuote: jest.fn().mockResolvedValue(quote) } as never,
+    { find: jest.fn().mockResolvedValue({ capabilities: {
+      maxReferenceImages: 7, maxImageMb: 50, maxPromptCharacters: 3072,
+    } }) } as never,
+    wallets as never, {} as never, {} as never, {} as never, {} as never, {} as never,
+  );
+
+  beforeEach(() => { assets.find.mockReset(); wallets.hold.mockReset(); });
+
+  it('rejects an expired reference video before reserving payment', async () => {
+    assets.find.mockResolvedValue([{ id: 9, assetType: 'video',
+      mimeType: 'video/mp4', storedUrl: 'https://example.com/long.mp4',
+      metadata: { mediaDurationSeconds: 20 }, width: 1920, height: 1080,
+      fps: 30, fileSizeBytes: 1_000_000,
+    }]);
+    await expect(service.create(7, { quoteId: 'omni-quote',
+      prompt: 'change the scene', referenceAssetIds: [9], elementAssetIds: [],
+    })).rejects.toThrow('Ảnh hoặc video tham chiếu');
+    expect(wallets.hold).not.toHaveBeenCalled();
+  });
+});

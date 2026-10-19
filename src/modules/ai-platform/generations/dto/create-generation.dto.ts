@@ -28,4 +28,9 @@ export class CreateGenerationDto {
   @IsArray()
   @IsInt({ each: true })
   referenceAssetIds?: number[];
+
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  elementAssetIds?: number[];
 }
