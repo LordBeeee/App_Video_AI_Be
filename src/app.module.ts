@@ -11,6 +11,7 @@ import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
 import { AssetsModule } from './modules/assets/assets.module';
 import { WalletModule } from './modules/wallet/wallet.module';
 import { AiPlatformModule } from './modules/ai-platform/ai-platform.module';
+import { OperationsModule } from './modules/operations/operations.module';
 import { validateEnv } from './config/validate-env';
 
 @Module({
@@ -44,6 +45,7 @@ import { validateEnv } from './config/validate-env';
     AssetsModule,
     WalletModule,
     AiPlatformModule,
+    OperationsModule,
   ],
   controllers: [AppController],
   providers: [

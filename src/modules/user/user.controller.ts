@@ -62,6 +62,12 @@ export class UserController {
     );
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('me/spending')
+  getMySpending(@CurrentUser() user: AuthenticatedUser) {
+    return this.statistics.getMySpending(user.id);
+  }
+
   // ── Cập nhật profile của bản thân ─────────────────────────────────────────
   @UseGuards(JwtAuthGuard)
   @Patch('me')
@@ -94,6 +100,13 @@ export class UserController {
   @Get('employee-stats')
   getEmployeeStats() {
     return this.statistics.getEmployeeStats();
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(1)
+  @Get('expense-overview')
+  getExpenseOverview(@Query('days') days?: string) {
+    return this.statistics.getExpenseOverview(parseInt(days ?? '30'));
   }
 
   // ── Admin: thống kê toàn hệ thống ─────────────────────────────────────────
@@ -170,6 +183,35 @@ export class UserController {
     @UploadedFile() file?: Express.Multer.File,
   ) {
     return this.userService.updateEmployee(parseInt(id), dto, file?.buffer);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(1)
+  @Get(':id/ai-usage')
+  getEmployeeAiUsage(@Param('id') id: string, @Query('days') days?: string) {
+    return this.statistics.getEmployeeAiUsage(
+      parseInt(id),
+      parseInt(days ?? '30'),
+    );
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(1)
+  @Get(':id/ai-usage/history')
+  getEmployeeAiHistory(
+    @Param('id') id: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('status') status?: string,
+    @Query('modality') modality?: string,
+  ) {
+    return this.statistics.getEmployeeAiHistory(
+      parseInt(id),
+      parseInt(page ?? '1'),
+      parseInt(limit ?? '10'),
+      status,
+      modality,
+    );
   }
 
   // ── Admin: chi tiết 1 nhân viên ───────────────────────────────────────────
