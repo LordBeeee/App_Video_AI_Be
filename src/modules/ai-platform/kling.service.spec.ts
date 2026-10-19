@@ -73,6 +73,32 @@ describe('KlingService', () => {
     ]);
   });
 
+  it('submits selected Kling 3.0 Omni Elements with stable prompt ids', async () => {
+    request.mockResolvedValue({
+      data: { code: 0, data: { id: 'omni-job', status: 'submitted' } },
+    });
+    await service.submit(
+      'kling/kling-3.0-omni',
+      'The hero @element_21 waves',
+      {
+        duration: 5,
+        resolution: '720p',
+        elementAssetIds: [21],
+        elementIds: ['kling-101'],
+      },
+      ['https://example.com/first.png'],
+    );
+    const config = request.mock.calls[0][0];
+    expect(config.url).toBe(
+      'https://api-singapore.klingai.com/omni-video/kling-3.0-omni',
+    );
+    expect(config.data.contents).toContainEqual({
+      type: 'element',
+      element_id: 'kling-101',
+      id: 'element_21',
+    });
+  });
+
   it('submits O1 to Kling Omni Video with image references', async () => {
     request.mockResolvedValue({
       data: { code: 0, data: { task_id: 'job-2', task_status: 'submitted' } },
@@ -204,7 +230,7 @@ describe('Kling element creation', () => {
     await service.createElement(7, {
       name: 'Cat',
       description: 'Mascot',
-      referenceType: 'image',
+      elementType: 'image',
       mainAssetId: 1,
       additionalAssetIds: [2],
     });
@@ -217,7 +243,7 @@ describe('Kling element creation', () => {
       refer_images: [{ image_url: 'https://example.com/side.png' }],
     });
     expect(repo.save).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 7, sourceType: 'reference' }),
+      expect.objectContaining({ userId: 7, sourceType: 'external' }),
     );
   });
 
@@ -295,12 +321,12 @@ describe('Kling element creation', () => {
       expect.objectContaining({
         userId: 7,
         assetRole: 'voice',
-        sourceType: 'reference',
+        sourceType: 'external',
       }),
     );
   });
 
-  it('saves the voice reference before submitting it to Kling', async () => {
+  it('saves the Voice before submitting it to Kling', async () => {
     repo.findOne.mockResolvedValue({
       id: 3,
       userId: 7,
@@ -348,7 +374,7 @@ describe('Kling element creation', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
-  it('updates a completed voice reference with the Kling Voice ID', async () => {
+  it('updates a completed Voice with the Kling Voice ID', async () => {
     const voice = {
       id: 9,
       assetRole: 'voice',
@@ -371,7 +397,7 @@ describe('Kling element creation', () => {
         },
       },
     });
-    const result = await service.listReferences(7);
+    const result = await service.listCustomAssets(7, 'voice');
     expect(result.items[0].metadata).toMatchObject({
       status: 'succeed',
       voiceId: 'voice-123',
@@ -405,12 +431,13 @@ describe('Kling element creation', () => {
       { voice_id: 'voice-789' },
     ],
   ])(
-    'deletes an owned %s %s reference through Kling',
+    'deletes an owned %s %s custom asset through Kling',
     async (role, type, idField, klingId, path, body) => {
       const asset = {
         id: 9,
         userId: 7,
-        sourceType: 'reference',
+        sourceType: 'external',
+        storageProvider: 'kling',
         assetRole: role,
         assetType: type,
         metadata: { status: 'succeed', [idField]: klingId },
@@ -423,7 +450,11 @@ describe('Kling element creation', () => {
         },
       });
 
-      const result = await service.deleteReference(7, 9);
+      const result = await service.deleteCustomAsset(
+        7,
+        9,
+        role as 'element' | 'voice',
+      );
 
       expect(request.mock.calls[0][0]).toMatchObject({
         method: 'POST',
@@ -437,14 +468,30 @@ describe('Kling element creation', () => {
     },
   );
 
-  it('refuses to delete another user’s reference', async () => {
+  it('refuses to delete another user’s Element', async () => {
     repo.findOne.mockResolvedValue({
       id: 9,
       userId: 8,
-      sourceType: 'reference',
+      sourceType: 'external',
+      storageProvider: 'kling',
       assetRole: 'element',
     });
-    await expect(service.deleteReference(7, 9)).rejects.toThrow();
+    await expect(service.deleteCustomAsset(7, 9, 'element')).rejects.toThrow();
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('does not delete a Voice through the Element endpoint', async () => {
+    repo.findOne.mockResolvedValue({
+      id: 9,
+      userId: 7,
+      sourceType: 'external',
+      storageProvider: 'kling',
+      assetRole: 'voice',
+      metadata: { status: 'succeed', voiceId: 'voice-789' },
+    });
+    await expect(service.deleteCustomAsset(7, 9, 'element')).rejects.toThrow(
+      'Loại tài nguyên',
+    );
     expect(request).not.toHaveBeenCalled();
   });
 
@@ -452,11 +499,14 @@ describe('Kling element creation', () => {
     repo.findOne.mockResolvedValue({
       id: 9,
       userId: 7,
-      sourceType: 'reference',
+      sourceType: 'external',
+      storageProvider: 'kling',
       assetRole: 'voice',
       metadata: { status: 'processing', taskId: 'create-task' },
     });
-    await expect(service.deleteReference(7, 9)).rejects.toThrow('đang tạo');
+    await expect(service.deleteCustomAsset(7, 9, 'voice')).rejects.toThrow(
+      'đang tạo',
+    );
     expect(request).not.toHaveBeenCalled();
   });
 
@@ -464,16 +514,17 @@ describe('Kling element creation', () => {
     repo.findOne.mockResolvedValue({
       id: 9,
       userId: 7,
-      sourceType: 'reference',
+      sourceType: 'external',
+      storageProvider: 'kling',
       assetRole: 'voice',
       metadata: { status: 'failed', taskId: null },
     });
-    const result = await service.deleteReference(7, 9);
+    const result = await service.deleteCustomAsset(7, 9, 'voice');
     expect(result.metadata.deleteStatus).toBe('succeed');
     expect(request).not.toHaveBeenCalled();
   });
 
-  it('keeps a reference visible when Kling reports deletion failed', async () => {
+  it('keeps a Voice visible when Kling reports deletion failed', async () => {
     const asset = {
       id: 9,
       assetRole: 'voice',
@@ -491,7 +542,7 @@ describe('Kling element creation', () => {
       },
     });
 
-    const result = await service.listReferences(7);
+    const result = await service.listCustomAssets(7, 'voice');
 
     expect(result.items).toEqual([asset]);
     expect(asset.metadata).toMatchObject({
@@ -500,7 +551,7 @@ describe('Kling element creation', () => {
     });
   });
 
-  it('removes a reference from the list only after Kling confirms deletion', async () => {
+  it('removes an Element from the list only after Kling confirms deletion', async () => {
     const asset = {
       id: 9,
       assetRole: 'element',
@@ -515,7 +566,7 @@ describe('Kling element creation', () => {
       data: { code: 0, data: { task_status: 'succeed' } },
     });
 
-    const result = await service.listReferences(7);
+    const result = await service.listCustomAssets(7, 'element');
 
     expect(request.mock.calls[0][0].url).toContain(
       '/advanced-custom-elements/delete-task',

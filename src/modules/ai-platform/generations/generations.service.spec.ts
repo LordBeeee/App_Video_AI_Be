@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { GenerationsService } from './generations.service';
 
-describe('GenerationsService Kling Ref validation', () => {
+describe('GenerationsService Kling Element validation', () => {
   const quote = {
     id: 'quote-1',
     modality: 'video',
@@ -23,11 +23,9 @@ describe('GenerationsService Kling Ref validation', () => {
     assets as never,
     { getValidQuote: jest.fn().mockResolvedValue(quote) } as never,
     {
-      find: jest
-        .fn()
-        .mockResolvedValue({
-          capabilities: { maxReferenceImages: 2, maxPromptCharacters: 2500 },
-        }),
+      find: jest.fn().mockResolvedValue({
+        capabilities: { maxReferenceImages: 2, maxPromptCharacters: 2500 },
+      }),
     } as never,
     wallets as never,
     {} as never,
@@ -69,11 +67,12 @@ describe('GenerationsService Kling Ref validation', () => {
     assets.find.mockResolvedValueOnce([frame]).mockResolvedValueOnce([
       {
         id: 2,
-        sourceType: 'reference',
+        sourceType: 'external',
+        storageProvider: 'kling',
         assetRole: 'element',
         metadata: {
           provider: 'Kling AI',
-          referenceType: 'image',
+          elementType: 'image',
           status: 'processing',
         },
       },

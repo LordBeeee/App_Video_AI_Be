@@ -189,8 +189,11 @@ export class GenerationsService {
     }
     const elementAssetIds: number[] =
       quote.request?.options?.elementAssetIds || [];
-    if (elementAssetIds.length && quote.modelSlug !== 'kling/kling-3.0') {
-      throw new BadRequestException('Model không hỗ trợ Ref Element');
+    if (
+      elementAssetIds.length &&
+      !['kling/kling-3.0', 'kling/kling-3.0-omni'].includes(quote.modelSlug)
+    ) {
+      throw new BadRequestException('Model không hỗ trợ Element');
     }
     const elementAssets = elementAssetIds.length
       ? await this.assets.find({ where: { id: In(elementAssetIds), userId } })
@@ -203,10 +206,13 @@ export class GenerationsService {
       const meta = asset?.metadata as Record<string, unknown> | undefined;
       if (
         !asset ||
-        asset.sourceType !== 'reference' ||
+        asset.sourceType !== 'external' ||
         asset.assetRole !== 'element' ||
+        asset.storageProvider !== 'kling' ||
         meta?.provider !== 'Kling AI' ||
-        meta?.referenceType !== 'image' ||
+        !['image', 'video'].includes(String(meta?.elementType || '')) ||
+        (quote.modelSlug === 'kling/kling-3.0' &&
+          meta?.elementType !== 'image') ||
         meta?.status !== 'succeed' ||
         !meta?.elementId ||
         ['submitting', 'submitted', 'processing', 'succeed'].includes(
@@ -214,11 +220,27 @@ export class GenerationsService {
         )
       ) {
         throw new BadRequestException(
-          'Ref Element không tồn tại hoặc chưa sẵn sàng',
+          'Element không tồn tại hoặc chưa sẵn sàng',
         );
       }
       return String(meta.elementId);
     });
+    if (
+      quote.modelSlug === 'kling/kling-3.0-omni' &&
+      quote.request?.options?.referenceMode === 'refer_image'
+    ) {
+      const videoElements = elementAssets.filter(
+        (asset) =>
+          (asset.metadata as Record<string, any>)?.elementType === 'video',
+      ).length;
+      const imageElements = elementAssets.length - videoElements;
+      const imageLimit = videoElements ? 4 : 7;
+      if (suppliedReferenceCount + imageElements > imageLimit) {
+        throw new BadRequestException(
+          `Omni chỉ hỗ trợ tối đa ${imageLimit} ảnh và Element ảnh trong chế độ ảnh tham chiếu`,
+        );
+      }
+    }
     const hold = await this.wallets.hold(
       userId,
       quote.id,

@@ -54,21 +54,21 @@ export class KlingService {
   async createElement(userId: number, body: any) {
     const name = String(body.name || '').trim();
     const description = String(body.description || '').trim();
-    const referenceType = body.referenceType === 'video' ? 'video' : 'image';
+    const elementType = body.elementType === 'video' ? 'video' : 'image';
     if (
       body.additionalAssetIds != null &&
       !Array.isArray(body.additionalAssetIds)
     )
       throw new BadRequestException('Danh sách ảnh bổ sung không hợp lệ');
     const ids =
-      referenceType === 'video'
+      elementType === 'video'
         ? [body.videoAssetId]
         : [body.mainAssetId, ...(body.additionalAssetIds || [])];
     if (!name || name.length > 20 || !description || description.length > 100)
       throw new BadRequestException('Tên (1–20) và mô tả (1–100) là bắt buộc');
     if (
       ids.some((id) => !Number.isSafeInteger(Number(id))) ||
-      (referenceType === 'image' && (ids.length < 2 || ids.length > 4))
+      (elementType === 'image' && (ids.length < 2 || ids.length > 4))
     )
       throw new BadRequestException(
         'Element ảnh cần 1 ảnh chính và 1–3 ảnh bổ sung',
@@ -80,11 +80,11 @@ export class KlingService {
     });
     if (
       assets.length !== ids.length ||
-      assets.some((asset) => asset.assetType !== referenceType)
+      assets.some((asset) => asset.assetType !== elementType)
     )
       throw new BadRequestException('Tài nguyên tham chiếu không hợp lệ');
     if (
-      referenceType === 'image' &&
+      elementType === 'image' &&
       assets.some(
         (asset) =>
           (asset.mimeType &&
@@ -98,7 +98,7 @@ export class KlingService {
         'Ảnh phải là JPG/PNG, tối đa 10 MB và ít nhất 300 px',
       );
     if (
-      referenceType === 'image' &&
+      elementType === 'image' &&
       assets.some(
         (asset) =>
           asset.width &&
@@ -111,7 +111,7 @@ export class KlingService {
         'Tỉ lệ ảnh phải nằm trong khoảng 1:2.5–2.5:1',
       );
     if (
-      referenceType === 'video' &&
+      elementType === 'video' &&
       assets.some(
         (asset) =>
           (asset.mimeType &&
@@ -129,8 +129,8 @@ export class KlingService {
     const payload: Record<string, any> = {
       element_name: name,
       element_description: description,
-      reference_type: referenceType === 'image' ? 'image_refer' : 'video_refer',
-      ...(referenceType === 'image'
+      reference_type: elementType === 'image' ? 'image_refer' : 'video_refer',
+      ...(elementType === 'image'
         ? {
             element_image_list: {
               frontal_image: urls[0],
@@ -147,12 +147,12 @@ export class KlingService {
         userId,
         projectId: null,
         sceneId: null,
-        assetType: referenceType,
+        assetType: elementType,
         assetRole: 'element',
-        sourceType: 'reference',
+        sourceType: 'external',
         storedUrl: urls[0],
         originalUrl: urls[0],
-        thumbnailUrl: referenceType === 'image' ? urls[0] : null,
+        thumbnailUrl: elementType === 'image' ? urls[0] : null,
         storageProvider: 'kling',
         mimeType: null,
         fileSizeBytes: null,
@@ -165,11 +165,11 @@ export class KlingService {
           provider: 'Kling AI',
           name,
           description,
-          referenceType,
+          elementType,
           voiceId: body.voiceId || null,
           taskId: null,
           status: 'submitting',
-          referenceUrls: urls,
+          sourceUrls: urls,
         },
       }),
     );
@@ -239,7 +239,7 @@ export class KlingService {
         sceneId: null,
         assetType: 'audio',
         assetRole: 'voice',
-        sourceType: 'reference',
+        sourceType: 'external',
         storedUrl: sample.storedUrl,
         originalUrl: sample.storedUrl,
         thumbnailUrl: null,
@@ -254,7 +254,6 @@ export class KlingService {
         metadata: {
           provider: 'Kling AI',
           name,
-          referenceType: 'voice',
           sampleAssetId,
           taskId: null,
           status: 'submitting',
@@ -286,12 +285,13 @@ export class KlingService {
     return this.assetRepo.save(asset);
   }
 
-  async listReferences(userId: number) {
+  async listCustomAssets(userId: number, role: 'element' | 'voice') {
     const assets = await this.assetRepo.find({
       where: {
         userId,
-        sourceType: 'reference',
-        assetRole: In(['element', 'voice']),
+        sourceType: 'external',
+        storageProvider: 'kling',
+        assetRole: role,
       },
       order: { createdAt: 'DESC' },
     });
@@ -314,7 +314,7 @@ export class KlingService {
           meta.deleteStatus = task?.task_status || meta.deleteStatus;
           meta.deleteError =
             task?.task_status === 'failed'
-              ? task?.task_status_msg || 'Kling không xóa được Reference'
+              ? task?.task_status_msg || 'Kling không xóa được tài nguyên'
               : null;
           asset.metadata = meta;
           await this.assetRepo.save(asset);
@@ -359,17 +359,22 @@ export class KlingService {
     };
   }
 
-  async deleteReference(userId: number, assetId: number) {
+  async deleteCustomAsset(
+    userId: number,
+    assetId: number,
+    role: 'element' | 'voice',
+  ) {
     if (!Number.isSafeInteger(assetId) || assetId < 1)
-      throw new BadRequestException('Reference ID không hợp lệ');
+      throw new BadRequestException('ID tài nguyên không hợp lệ');
     const asset = await this.assetRepo.findOne({ where: { id: assetId } });
-    if (!asset) throw new NotFoundException('Không tìm thấy Reference');
+    if (!asset) throw new NotFoundException('Không tìm thấy tài nguyên');
     if (Number(asset.userId) !== Number(userId)) throw new ForbiddenException();
     if (
-      asset.sourceType !== 'reference' ||
-      !['element', 'voice'].includes(asset.assetRole || '')
+      asset.sourceType !== 'external' ||
+      asset.storageProvider !== 'kling' ||
+      asset.assetRole !== role
     )
-      throw new BadRequestException('Asset này không phải Reference');
+      throw new BadRequestException('Loại tài nguyên không hợp lệ');
 
     const meta = asset.metadata as Record<string, any>;
     if (meta.deleteStatus === 'succeed') return asset;
@@ -381,7 +386,7 @@ export class KlingService {
     if (!klingId) {
       if (meta.status !== 'failed')
         throw new ConflictException(
-          'Reference đang tạo, hãy đợi Kling xử lý xong',
+          'Tài nguyên đang tạo, hãy đợi Kling xử lý xong',
         );
       asset.metadata = { ...meta, deleteStatus: 'succeed' };
       return this.assetRepo.save(asset);
@@ -474,6 +479,13 @@ export class KlingService {
             url,
             id: `image_${index + 1}`,
           })),
+          ...(Array.isArray(options.elementIds)
+            ? options.elementIds.map((elementId: string, index: number) => ({
+                type: 'element',
+                element_id: elementId,
+                id: `element_${options.elementAssetIds[index]}`,
+              }))
+            : []),
         ],
         settings: {
           duration,

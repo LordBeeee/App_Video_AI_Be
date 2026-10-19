@@ -19,7 +19,11 @@ previous application database. **Do not run it on a fresh installation.**
 Back up the database before running it. The separate
 `migrations/202610160001_reference_assets.sql` updates the source-type check
 for an existing installation when that file is present in the checkout.
-Fresh installations already include `reference` in the check constraint.
+After deploying the Element/Voice API, run
+`migrations/202610190001_elements_and_voices.sql` on existing installations.
+It moves Kling Element and Voice assets to `source_type = 'external'`, updates
+Element metadata keys, and removes `reference` from the source-type check.
+Fresh installations already use the new check constraint.
 
 The backend uses TypeORM with `synchronize: false`; starting the app never
 creates or updates tables automatically.

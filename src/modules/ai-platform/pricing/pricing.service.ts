@@ -95,7 +95,7 @@ export class PricingService {
       const elementAssetIds = options.elementAssetIds;
       if (
         elementAssetIds != null &&
-        (model.id !== 'kling/kling-3.0' ||
+        (!['kling/kling-3.0', 'kling/kling-3.0-omni'].includes(model.id) ||
           !Array.isArray(elementAssetIds) ||
           elementAssetIds.length > 3 ||
           elementAssetIds.some(
@@ -104,7 +104,7 @@ export class PricingService {
           new Set(elementAssetIds).size !== elementAssetIds.length)
       ) {
         throw new BadRequestException(
-          'Ref Element chỉ hỗ trợ tối đa 3 mục cho Kling 3.0',
+          'Element chỉ hỗ trợ tối đa 3 mục cho Kling 3.0/3.0 Omni',
         );
       }
       check(options.resolution, caps.resolutions, 'Độ phân giải');
@@ -292,7 +292,9 @@ export class PricingService {
       request.modality === 'video' &&
       prompt.length > Number(model.capabilities?.maxPromptCharacters || 2500)
     ) {
-      throw new BadRequestException('Prompt vượt giới hạn ký tự của model Kling');
+      throw new BadRequestException(
+        'Prompt vượt giới hạn ký tự của model Kling',
+      );
     }
     if (
       request.modality === 'video' &&

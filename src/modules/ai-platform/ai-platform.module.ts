@@ -21,7 +21,10 @@ import { OpenRouterService } from './openrouter.service';
 import { KlingService } from './kling.service';
 import { PricingController } from './pricing/pricing.controller';
 import { PricingService } from './pricing/pricing.service';
-import { ReferencesController } from './references/references.controller';
+import {
+  ElementsController,
+  VoicesController,
+} from './custom-assets/custom-assets.controller';
 import { GenerationAssetsService } from './generations/generation-assets.service';
 import { VideoReconciliationService } from './generations/video-reconciliation.service';
 
@@ -45,7 +48,8 @@ import { VideoReconciliationService } from './generations/video-reconciliation.s
     PricingController,
     GenerationsController,
     ChatController,
-    ReferencesController,
+    ElementsController,
+    VoicesController,
   ],
   providers: [
     OpenRouterService,

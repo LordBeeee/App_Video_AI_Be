@@ -94,7 +94,7 @@ describe('PricingService option validation', () => {
     ).toThrow(BadRequestException);
   });
 
-  it('limits Ref Elements to Kling 3.0 and three unique assets', () => {
+  it('limits Elements to Kling 3.0 models and three unique assets', () => {
     const validateElements = (modelId: string, ids: unknown) =>
       (service as any).validateOptions(
         'video',
@@ -111,7 +111,8 @@ describe('PricingService option validation', () => {
     expect(() => validateElements('kling/kling-3.0', [1, 1])).toThrow(
       BadRequestException,
     );
-    expect(() => validateElements('kling/kling-3.0-omni', [1])).toThrow(
+    expect(() => validateElements('kling/kling-3.0-omni', [1])).not.toThrow();
+    expect(() => validateElements('kling/kling-o1', [1])).toThrow(
       BadRequestException,
     );
   });
@@ -158,12 +159,14 @@ describe('PricingService option validation', () => {
       {} as never,
       {} as never,
     );
-    await expect(pricing.createQuote(1, {
-      modality: 'video',
-      modelSlug: standard.id,
-      prompt: 'x'.repeat(2501),
-      options: { duration: 5, resolution: '720p' },
-    })).rejects.toThrow('Prompt vượt giới hạn ký tự');
+    await expect(
+      pricing.createQuote(1, {
+        modality: 'video',
+        modelSlug: standard.id,
+        prompt: 'x'.repeat(2501),
+        options: { duration: 5, resolution: '720p' },
+      }),
+    ).rejects.toThrow('Prompt vượt giới hạn ký tự');
   });
 
   it('accepts a quote when generation trims surrounding prompt whitespace', async () => {

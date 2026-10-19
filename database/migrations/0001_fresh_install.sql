@@ -60,7 +60,7 @@ CREATE TABLE assets (
   is_favorite BOOLEAN NOT NULL DEFAULT false,
   metadata JSONB NOT NULL DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT chk_assets_source_type CHECK (source_type IN ('uploaded', 'generated', 'external', 'reference'))
+  CONSTRAINT chk_assets_source_type CHECK (source_type IN ('uploaded', 'generated', 'external'))
 );
 CREATE INDEX idx_assets_user_created ON assets(user_id, created_at DESC);
 
