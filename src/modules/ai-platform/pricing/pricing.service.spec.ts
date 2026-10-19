@@ -174,9 +174,9 @@ describe('PricingService option validation', () => {
     })).toBeCloseTo(0.84);
   });
 
-  it('limits Kling 3.0 prompts to 2500 characters when quoting', async () => {
+  it('limits Kling 3.0 prompts to 3072 characters when quoting', async () => {
     const standard = KLING_VIDEO_MODELS[1];
-    expect(standard.capabilities.maxPromptCharacters).toBe(2500);
+    expect(standard.capabilities.maxPromptCharacters).toBe(3072);
     const pricing = new PricingService(
       {} as never,
       { find: async () => standard } as never,
@@ -187,7 +187,7 @@ describe('PricingService option validation', () => {
       pricing.createQuote(1, {
         modality: 'video',
         modelSlug: standard.id,
-        prompt: 'x'.repeat(2501),
+        prompt: 'x'.repeat(3073),
         options: { duration: 5, resolution: '720p' },
       }),
     ).rejects.toThrow('Prompt vượt giới hạn ký tự');

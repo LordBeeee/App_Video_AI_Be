@@ -45,7 +45,7 @@ export const KLING_VIDEO_MODELS = [
       generateAudio: true,
       multiShot: true,
       maxImageMb: 50,
-      maxPromptCharacters: 2500,
+      maxPromptCharacters: 3072,
     },
     pricing: {
       unitType: 'api_unit',
