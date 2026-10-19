@@ -277,11 +277,10 @@ export class GenerationsService {
     quote.consumedAt = new Date();
     await this.quotes.save(quote);
 
-    let imageNumber = 0;
     const resolvedOmniInputs = omniInputs.map((input) => ({
       type: input.type,
       url: referenceById.get(input.assetId)!.storedUrl,
-      id: input.type.endsWith('_video') ? 'video_1' : `image_${++imageNumber}`,
+      id: `${input.type.endsWith('_video') ? 'video' : 'image'}_${input.assetId}`,
     }));
     const options = {
       ...(quote.request?.options || {}),

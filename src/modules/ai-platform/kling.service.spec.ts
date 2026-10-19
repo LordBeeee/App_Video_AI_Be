@@ -173,6 +173,24 @@ describe('KlingService', () => {
     expect(body.settings.audio).toBe('original');
   });
 
+  it('keeps asset-based mentions attached to their Omni inputs', async () => {
+    request.mockResolvedValue({ data: { code: 0, data: { id: 'mixed-job' } } });
+    await service.submit('kling/kling-3.0-omni',
+      '@image_42 uses @image_17 and follows @video_9', {
+        duration: 5,
+        referenceInputs: [
+          { type: 'first_frame', id: 'image_42', url: 'https://example.com/start.png' },
+          { type: 'refer_image', id: 'image_17', url: 'https://example.com/look.png' },
+          { type: 'feature_video', id: 'video_9', url: 'https://example.com/clip.mp4' },
+        ],
+      }, []);
+    const contents = request.mock.calls[0][0].data.contents;
+    expect(contents.map((item: { id?: string }) => item.id)).toEqual([
+      undefined, 'image_42', 'image_17', 'video_9',
+    ]);
+    expect(contents[0].text).toBe('@image_42 uses @image_17 and follows @video_9');
+  });
+
   it('does not send unsupported audio and multi-shot settings to Turbo', async () => {
     request.mockResolvedValue({
       data: { code: 0, data: { id: 'turbo-1', status: 'submitted' } },
