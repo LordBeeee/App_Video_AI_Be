@@ -89,32 +89,6 @@ export const KLING_VIDEO_MODELS = [
       },
     },
   },
-  {
-    id: 'kling/kling-o1',
-    name: 'Kling: O1',
-    provider: 'kling',
-    apiModel: 'kling-video-o1',
-    apiKind: 'omni_legacy',
-    modality: 'video',
-    description: 'Omni Video legacy; chưa có giá API công khai để tạo tác vụ.',
-    capabilities: {
-      resolutions: ['720p', '1080p'],
-      aspectRatios: ['16:9', '9:16', '1:1'],
-      durations: Array.from({ length: 8 }, (_, i) => i + 3),
-      frameImages: ['first_frame', 'last_frame', 'refer_image'],
-      referenceModes: ['first_frame', 'refer_image'],
-      maxReferenceImages: 7,
-      requiresImage: true,
-      generateAudio: false,
-      maxImageMb: 10,
-      maxPromptCharacters: 2500,
-    },
-    pricing: {
-      unitType: 'unpublished_api_rate',
-      source: 'kling_api_pricing',
-      perSecond: {},
-    },
-  },
 ] as const;
 
 export function klingVideoModel(id: string) {

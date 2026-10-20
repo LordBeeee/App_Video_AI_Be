@@ -440,31 +440,7 @@ export class KlingService {
       options.referenceMode === 'refer_image' ? 'refer_image' : 'first_frame';
     let path: string;
     let body: Record<string, any>;
-    if (model.apiKind === 'omni_legacy') {
-      path = '/v1/videos/omni-video';
-      const imageList = references.map((url, index) => ({
-        image_url: url,
-        ...(referenceMode === 'first_frame'
-          ? { type: index === 0 ? 'first_frame' : 'end_frame' }
-          : {}),
-      }));
-      body = {
-        model_name: model.apiModel,
-        prompt:
-          referenceMode === 'refer_image'
-            ? `${prompt} ${references
-                .map((_, i) => `<<<image_${i + 1}>>>`)
-                .filter((tag) => !prompt.includes(tag))
-                .join(' ')}`.trim()
-            : prompt,
-        image_list: imageList,
-        duration: String(duration),
-        mode: resolution === '1080p' ? 'pro' : 'std',
-        ...(referenceMode === 'refer_image'
-          ? { aspect_ratio: options.aspectRatio || '16:9' }
-          : {}),
-      };
-    } else if (model.apiKind === 'omni_new') {
+    if (model.apiKind === 'omni_new') {
       path = '/omni-video/kling-3.0-omni';
       const omniInputs = Array.isArray(options.referenceInputs)
         ? options.referenceInputs
@@ -541,16 +517,10 @@ export class KlingService {
   async getJob(modelId: string, jobId: string) {
     const model = klingVideoModel(modelId);
     if (!model) throw new BadRequestException('Model Kling không hợp lệ');
-    const data =
-      model.apiKind === 'omni_legacy'
-        ? await this.request(
-            'GET',
-            `/v1/videos/omni-video/${encodeURIComponent(jobId)}`,
-          )
-        : await this.request(
-            'GET',
-            `/tasks?task_ids=${encodeURIComponent(jobId)}`,
-          );
+    const data = await this.request(
+      'GET',
+      `/tasks?task_ids=${encodeURIComponent(jobId)}`,
+    );
     const job = Array.isArray(data) ? data[0] : data;
     if (!job)
       throw new BadGatewayException('Kling chưa trả về trạng thái tác vụ');

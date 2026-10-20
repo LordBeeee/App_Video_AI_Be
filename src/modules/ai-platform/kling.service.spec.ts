@@ -99,25 +99,6 @@ describe('KlingService', () => {
     });
   });
 
-  it('submits O1 to Kling Omni Video with image references', async () => {
-    request.mockResolvedValue({
-      data: { code: 0, data: { task_id: 'job-2', task_status: 'submitted' } },
-    });
-    await service.submit(
-      'kling/kling-o1',
-      'wave',
-      { duration: 5, resolution: '720p' },
-      ['https://example.com/one.png'],
-    );
-    const config = request.mock.calls[0][0];
-    expect(config.url).toBe(
-      'https://api-singapore.klingai.com/v1/videos/omni-video',
-    );
-    expect(config.data.model_name).toBe('kling-video-o1');
-    expect(config.data.image_list[0].type).toBe('first_frame');
-    expect(config.data.prompt).toBe('wave');
-  });
-
   it('submits 3.0 Omni to the current API with typed reference images', async () => {
     request.mockResolvedValue({
       data: { code: 0, data: { id: 'omni-1', status: 'submitted' } },

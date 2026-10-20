@@ -114,10 +114,9 @@ INSERT INTO _seed_models (modality, slug, name, source, weight, cost_min, cost_m
   ('image', 'google/gemini-2.5-flash-image',    'Gemini 2.5 Flash Image', 'openrouter', 0.45,   950,   1100,   6,  14),
   ('image', 'openai/gpt-image-1',               'GPT Image 1',            'openrouter', 0.30,  1800,   7500,  15,  45),
   ('image', 'black-forest-labs/flux-1.1-pro',   'FLUX 1.1 Pro',           'openrouter', 0.25,   700,   1700,   8,  25),
-  ('video', 'kling/kling-3.0-turbo',            'Kling: 3.0 Turbo',       'kling',      0.35,  8000,  30000,  60, 180),
-  ('video', 'kling/kling-3.0',                  'Kling: 3.0',             'kling',      0.40, 15000,  70000,  90, 300),
+  ('video', 'kling/kling-3.0-turbo',            'Kling: 3.0 Turbo',       'kling',      0.40,  8000,  30000,  60, 180),
+  ('video', 'kling/kling-3.0',                  'Kling: 3.0',             'kling',      0.45, 15000,  70000,  90, 300),
   ('video', 'kling/kling-3.0-omni',             'Kling: 3.0 Omni',        'kling',      0.15, 25000,  90000, 120, 360),
-  ('video', 'kling/kling-o1',                   'Kling: O1',              'kling',      0.10, 22000,  80000, 120, 330),
   ('audio', 'openai/gpt-4o-mini-tts',           'GPT-4o mini TTS',        'openrouter', 0.60,   250,    900,   3,   9),
   ('audio', 'openai/tts-1-hd',                  'TTS-1 HD',               'openrouter', 0.40,   400,   1500,   4,  12);
 

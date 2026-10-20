@@ -387,10 +387,7 @@ export class PricingService {
     }
     if (!(maxUsd > 0)) {
       throw new BadRequestException(
-        model.provider === 'kling' &&
-          model.pricing?.unitType === 'unpublished_api_rate'
-          ? 'Kling O1 chưa có giá API công khai để báo giá và tạo tác vụ'
-          : 'Model chưa có dữ liệu giá phù hợp với lựa chọn này',
+        'Model chưa có dữ liệu giá phù hợp với lựa chọn này',
       );
     }
 

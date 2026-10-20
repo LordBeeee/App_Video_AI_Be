@@ -112,7 +112,7 @@ describe('PricingService option validation', () => {
       BadRequestException,
     );
     expect(() => validateElements('kling/kling-3.0-omni', [1])).not.toThrow();
-    expect(() => validateElements('kling/kling-o1', [1])).toThrow(
+    expect(() => validateElements('kling/kling-3.0-turbo', [1])).toThrow(
       BadRequestException,
     );
   });
@@ -161,12 +161,6 @@ describe('PricingService option validation', () => {
     expect(
       (priced as any).videoCost(standard, { duration: 5, resolution: '4k' }),
     ).toBeCloseTo(2.1);
-    expect(
-      (priced as any).videoCost(KLING_VIDEO_MODELS[3], {
-        duration: 5,
-        resolution: '720p',
-      }),
-    ).toBe(0);
     expect((priced as any).videoCost(KLING_VIDEO_MODELS[2], {
       duration: 5,
       resolution: '1080p',
