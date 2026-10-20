@@ -92,6 +92,19 @@ export class PricingService {
       checkImage('seed', 'seed', 'Seed');
     }
     if (modality === 'video') {
+      if (model.provider === 'seedance') {
+        const ids = options.referenceAssetIds;
+        if (!Array.isArray(ids) || ids.length < 1 || ids.length > 2 ||
+          ids.some((id: unknown) => !Number.isSafeInteger(id) || Number(id) < 1) ||
+          new Set(ids).size !== ids.length) {
+          throw new BadRequestException('Seedance cần 1 ảnh đầu và tối đa 1 ảnh cuối');
+        }
+        if (options.aspectRatio || options.referenceInputs || options.referenceMode ||
+          options.elementAssetIds?.length || options.multiShot || options.customShots ||
+          options.audioMode || options.size || options.seed) {
+          throw new BadRequestException('Tùy chọn không được Seedance image-to-video hỗ trợ');
+        }
+      }
       const omniInputs = options.referenceInputs;
       if (omniInputs != null) {
         if (
@@ -251,6 +264,19 @@ export class PricingService {
   }
 
   private videoCost(model: any, options: Record<string, any>) {
+    if (model.provider === 'seedance') {
+      const resolution = String(options.resolution || '720p');
+      const duration = Number(options.duration || 5);
+      // BytePlus bills output tokens; reserve above the documented estimate.
+      const shortSide: Record<string, number> = {
+        '480p': 480, '720p': 720, '1080p': 1080,
+      };
+      const side = shortSide[resolution];
+      const rate = Number(model.pricing.perMillionTokens[resolution]);
+      if (!side || !Number.isFinite(rate)) return 0;
+      // Input image ratio may reach 2.5:1; reserve for the largest output canvas.
+      return (duration * side * side * 2.5 * 24 / 1024) * rate / 1_000_000 * 1.25;
+    }
     if (model.provider === 'kling') {
       const resolution = String(
         options.resolution || model.capabilities.resolutions[0],
@@ -346,7 +372,7 @@ export class PricingService {
       prompt.length > Number(model.capabilities?.maxPromptCharacters || 2500)
     ) {
       throw new BadRequestException(
-        'Prompt vượt giới hạn ký tự của model Kling',
+        'Prompt vượt giới hạn ký tự của model',
       );
     }
     if (
@@ -371,6 +397,12 @@ export class PricingService {
       units = {
         estimatedUnits: maxUsd / usdPerUnit,
         usdPerUnit,
+        basis: model.pricing.source,
+      };
+    }
+    if (request.modality === 'video' && model.provider === 'seedance') {
+      units = {
+        usdPerMillionTokens: model.pricing.perMillionTokens[options.resolution || '720p'],
         basis: model.pricing.source,
       };
     }
@@ -410,10 +442,10 @@ export class PricingService {
         promptHash: this.hashPrompt(prompt),
         promptLength: prompt.length,
         units,
-        ...(request.modality === 'video' && model.provider === 'kling'
+        ...(request.modality === 'video' && ['kling', 'seedance'].includes(model.provider)
           ? {
               priceBasis: model.pricing.unitType,
-              priceSource: 'https://kling.ai/dev/pricing',
+              priceSource: model.pricing.source,
             }
           : {}),
         fxSource: fx.source,

@@ -1,6 +1,26 @@
 import { BadRequestException } from '@nestjs/common';
 import { GenerationsService } from './generations.service';
 
+describe('GenerationsService Seedance quote binding', () => {
+  it('rejects changed frame assets before holding the wallet', async () => {
+    const wallets = { hold: jest.fn() };
+    const service = new GenerationsService(
+      {} as never, {} as never, {} as never, {} as never,
+      { getValidQuote: jest.fn().mockResolvedValue({
+        modality: 'video', modelSlug: 'seedance/seedance-2.5',
+        request: { options: { referenceAssetIds: [1] } },
+      }) } as never,
+      { find: jest.fn().mockResolvedValue({ provider: 'seedance' }) } as never,
+      wallets as never, {} as never, {} as never, {} as never,
+      {} as never, {} as never, {} as never,
+    );
+    await expect(service.create(7, {
+      quoteId: 'quote-1', prompt: 'Camera moves', referenceAssetIds: [2],
+    })).rejects.toThrow('Ảnh đã thay đổi');
+    expect(wallets.hold).not.toHaveBeenCalled();
+  });
+});
+
 describe('GenerationsService Kling Element validation', () => {
   const quote = {
     id: 'quote-1',
@@ -28,6 +48,7 @@ describe('GenerationsService Kling Element validation', () => {
       }),
     } as never,
     wallets as never,
+    {} as never,
     {} as never,
     {} as never,
     {} as never,
@@ -106,7 +127,7 @@ describe('GenerationsService Omni asset checks', () => {
     { find: jest.fn().mockResolvedValue({ capabilities: {
       maxReferenceImages: 7, maxImageMb: 50, maxPromptCharacters: 3072,
     } }) } as never,
-    wallets as never, {} as never, {} as never, {} as never, {} as never, {} as never,
+    wallets as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never,
   );
 
   beforeEach(() => { assets.find.mockReset(); wallets.hold.mockReset(); });

@@ -2,7 +2,7 @@
 
 NestJS API for authentication, media assets, AI generation, chat, pricing,
 wallets and payOS top-ups. PostgreSQL stores application data. OpenRouter,
-Kling, Cloudinary and payOS are external services.
+Kling, BytePlus ModelArk, Cloudinary and payOS are external services.
 
 ## Start from a fresh clone
 
@@ -41,7 +41,8 @@ smoke check. Login uses HTTP-only cookies. The default CORS origin is
 ## Configuration
 
 `.env.example` lists every startup variable. Database, JWT, Cloudinary and
-OpenRouter settings are required at startup. Kling is needed for video jobs;
+OpenRouter settings are required at startup. Kling and BytePlus ModelArk keys
+are needed when calling their respective video models;
 payOS credentials are needed for top-ups and webhook verification. The
 application reports missing startup variables before connecting to the DB.
 

@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { CatalogService } from './catalog.service';
 import { KLING_VIDEO_MODELS } from './kling-video';
+import { SEEDANCE_VIDEO_MODELS } from './seedance-video';
 
 describe('CatalogService', () => {
   const allowedImageSlugs = [
@@ -67,7 +68,7 @@ describe('CatalogService', () => {
     const result = await service.list('video');
 
     expect(result.map((model) => model.id)).toEqual(
-      KLING_VIDEO_MODELS.map((model) => model.id),
+      [...KLING_VIDEO_MODELS, ...SEEDANCE_VIDEO_MODELS].map((model) => model.id),
     );
     expect(result.some((model) => model.id === 'runway/gen-4.5')).toBe(false);
   });

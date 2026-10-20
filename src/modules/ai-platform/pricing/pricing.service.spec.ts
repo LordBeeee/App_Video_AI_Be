@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { PricingService } from './pricing.service';
 import { KLING_VIDEO_MODELS } from '../catalog/kling-video';
+import { SEEDANCE_VIDEO_MODELS } from '../catalog/seedance-video';
 
 describe('PricingService option validation', () => {
   const service = new PricingService(
@@ -166,6 +167,18 @@ describe('PricingService option validation', () => {
       resolution: '1080p',
       referenceInputs: [{ assetId: 1, type: 'base_video' }],
     })).toBeCloseTo(0.84);
+  });
+
+  it('quotes Seedance from output tokens and requires selected frame assets', () => {
+    const model = SEEDANCE_VIDEO_MODELS[0];
+    expect(() => (service as any).validateOptions('video', model, {
+      duration: 5, resolution: '720p', referenceAssetIds: [1],
+    })).not.toThrow();
+    expect(() => (service as any).validateOptions('video', model, {
+      duration: 5, resolution: '720p', referenceAssetIds: [1], aspectRatio: '16:9',
+    })).toThrow(BadRequestException);
+    expect((service as any).videoCost(model, { duration: 5, resolution: '720p' }))
+      .toBeCloseTo((5 * 720 * 720 * 2.5 * 24 / 1024) * 10.7 / 1_000_000 * 1.25);
   });
 
   it('limits Kling 3.0 prompts to 3072 characters when quoting', async () => {

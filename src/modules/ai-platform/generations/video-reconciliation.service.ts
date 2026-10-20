@@ -11,6 +11,7 @@ import { Repository } from 'typeorm';
 import { CloudinaryService } from '../../../common/cloudinary/cloudinary.service';
 import { WalletService } from '../../wallet/wallet.service';
 import { KlingService } from '../kling.service';
+import { SeedanceService } from '../seedance.service';
 import { chargeQuoteVnd } from '../pricing/pricing-calculator';
 import { PricingQuote } from '../pricing/pricing-quote.entity';
 import { AiGeneration } from './ai-generation.entity';
@@ -34,6 +35,7 @@ export class VideoReconciliationService
     private readonly outputAssets: GenerationAssetsService,
     private readonly wallets: WalletService,
     private readonly config: ConfigService,
+    private readonly seedance: SeedanceService,
   ) {}
 
   onModuleInit() {
@@ -69,7 +71,7 @@ export class VideoReconciliationService
     }
 
     for (const generation of pending) {
-      if (generation.source !== 'kling') continue;
+      if (!['kling', 'seedance'].includes(generation.source)) continue;
       try {
         await this.reconcile(generation);
       } catch (error) {
@@ -81,20 +83,22 @@ export class VideoReconciliationService
   }
 
   async reconcile(generation: AiGeneration) {
-    if (generation.source !== 'kling' || !generation.externalJobId)
+    if (!['kling', 'seedance'].includes(generation.source) || !generation.externalJobId)
       return generation;
     if (this.inProgress.has(generation.id)) return generation;
     this.inProgress.add(generation.id);
     try {
-      const job = await this.kling.getJob(
-        generation.modelSlug,
-        generation.externalJobId,
-      );
+      const isSeedance = generation.source === 'seedance';
+      const job = isSeedance
+        ? await this.seedance.getJob(generation.externalJobId)
+        : await this.kling.getJob(generation.modelSlug, generation.externalJobId);
       const state = job.status;
       if (['completed', 'succeeded', 'succeed'].includes(state)) {
         if (!job.url)
-          throw new BadRequestException('Kling chưa trả về URL video');
-        const buffer = await this.kling.download(job.url);
+          throw new BadRequestException('Provider chưa trả về URL video');
+        const buffer = isSeedance
+          ? await this.seedance.download(job.url)
+          : await this.kling.download(job.url);
         const uploaded = await this.cloudinary.uploadVideoBuffer(
           buffer,
           `ai-generation/users/${generation.userId}/videos`,
@@ -110,12 +114,12 @@ export class VideoReconciliationService
         const quote = await this.quotes.findOneOrFail({
           where: { id: generation.quoteId },
         });
-        const actualUsd =
-          typeof job.costUsd === 'number' &&
-          Number.isFinite(job.costUsd) &&
-          job.costUsd >= 0
-            ? job.costUsd
-            : undefined;
+        const seedanceRate = Number(quote.request?.units?.usdPerMillionTokens);
+        const actualUsd = isSeedance
+          ? Number.isFinite(job.units) && job.units >= 0 && seedanceRate > 0
+            ? job.units * seedanceRate / 1_000_000 : undefined
+          : typeof job.costUsd === 'number' && Number.isFinite(job.costUsd) && job.costUsd >= 0
+            ? job.costUsd : undefined;
         const charge = chargeQuoteVnd(
           Number(quote.maxPriceVnd),
           Number(quote.usdVndRate),
@@ -124,9 +128,9 @@ export class VideoReconciliationService
         );
         generation.status = 'succeeded';
         generation.outputUrls = [uploaded.secure_url];
-        generation.usage = {
-          units: Number.isFinite(job.units) ? job.units : undefined,
-        };
+        generation.usage = isSeedance
+          ? { completion_tokens: Number.isFinite(job.units) ? job.units : undefined }
+          : { units: Number.isFinite(job.units) ? job.units : undefined };
         generation.actualCostUsd =
           actualUsd != null ? String(actualUsd) : undefined;
         generation.chargedVnd = charge;

@@ -19,6 +19,7 @@ import { GenerationsController } from './generations/generations.controller';
 import { GenerationsService } from './generations/generations.service';
 import { OpenRouterService } from './openrouter.service';
 import { KlingService } from './kling.service';
+import { SeedanceService } from './seedance.service';
 import { PricingController } from './pricing/pricing.controller';
 import { PricingService } from './pricing/pricing.service';
 import {
@@ -54,6 +55,7 @@ import { VideoReconciliationService } from './generations/video-reconciliation.s
   providers: [
     OpenRouterService,
     KlingService,
+    SeedanceService,
     CatalogService,
     FxService,
     PricingService,

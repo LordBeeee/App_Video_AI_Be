@@ -16,6 +16,7 @@ import { OpenRouterService } from '../openrouter.service';
 import { CatalogService } from '../catalog/catalog.service';
 import { PricingService } from '../pricing/pricing.service';
 import { KlingService } from '../kling.service';
+import { SeedanceService } from '../seedance.service';
 import { GenerationAssetsService } from './generation-assets.service';
 import { chargeQuoteVnd } from '../pricing/pricing-calculator';
 import { VideoReconciliationService } from './video-reconciliation.service';
@@ -47,6 +48,7 @@ export class GenerationsService {
     private readonly cloudinary: CloudinaryService,
     private readonly outputAssets: GenerationAssetsService,
     private readonly videoReconciliation: VideoReconciliationService,
+    private readonly seedance: SeedanceService,
   ) {}
 
   private chargeVnd(quote: PricingQuote, actualCostUsd?: number) {
@@ -95,6 +97,11 @@ export class GenerationsService {
       quote.modality,
       quote.modelSlug,
     );
+    const isSeedance = catalogModel.provider === 'seedance';
+    if (isSeedance && JSON.stringify(body.referenceAssetIds || []) !==
+      JSON.stringify(quote.request?.options?.referenceAssetIds || [])) {
+      throw new BadRequestException('Ảnh đã thay đổi, vui lòng lấy báo giá mới');
+    }
     const isOmni = quote.modelSlug === 'kling/kling-3.0-omni';
     const omniInputs: { assetId: number; type: string }[] = isOmni
       ? quote.request?.options?.referenceInputs || []
@@ -113,7 +120,7 @@ export class GenerationsService {
         Number(catalogModel.capabilities?.maxPromptCharacters || 2500)
     ) {
       throw new BadRequestException(
-        'Prompt vượt giới hạn ký tự của model Kling',
+        'Prompt vượt giới hạn ký tự của model',
       );
     }
     const referenceLimit =
@@ -196,7 +203,9 @@ export class GenerationsService {
             asset.fps == null || asset.fps < 24 || asset.fps > 60;
         }
         return asset.assetType !== 'image' ||
-          !['image/jpeg', 'image/png'].includes(asset.mimeType || '') ||
+          !(isSeedance
+            ? ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(asset.mimeType || '')
+            : ['image/jpeg', 'image/png'].includes(asset.mimeType || '')) ||
           (asset.width != null && asset.width < 300) ||
           (asset.height != null && asset.height < 300) ||
           (asset.width != null && asset.height != null &&
@@ -206,7 +215,7 @@ export class GenerationsService {
       });
     if (invalidReference) {
       throw new BadRequestException(
-        'Ảnh hoặc video tham chiếu không đáp ứng yêu cầu của Kling',
+        `Ảnh hoặc video tham chiếu không đáp ứng yêu cầu của ${isSeedance ? 'Seedance' : 'Kling'}`,
       );
     }
     if (quote.modality === 'video' && !isOmni && suppliedReferenceCount === 0) {
@@ -298,11 +307,11 @@ export class GenerationsService {
         walletHoldId: hold.id,
         modality: quote.modality,
         modelSlug: quote.modelSlug,
-        source: quote.modality === 'video' ? 'kling' : 'openrouter',
+        source: quote.modality === 'video' ? (isSeedance ? 'seedance' : 'kling') : 'openrouter',
         modelNameSnapshot:
           String(quote.request?.modelName || '') || quote.modelSlug,
         providerSnapshot: {
-          provider: quote.modality === 'video' ? 'kling' : 'openrouter',
+          provider: quote.modality === 'video' ? (isSeedance ? 'seedance' : 'kling') : 'openrouter',
         },
         status: 'processing',
         prompt,
@@ -479,13 +488,10 @@ export class GenerationsService {
 
   private async createVideo(generation: AiGeneration, model: any) {
     const opts = generation.options || {};
-    const job = await this.kling.submit(
-      generation.modelSlug,
-      generation.prompt,
-      opts,
-      opts.referenceUrls || [],
-    );
-    if (!job.id) throw new BadRequestException('Kling không trả về mã tác vụ');
+    const job = model.provider === 'seedance'
+      ? await this.seedance.submit(generation.prompt, opts, opts.referenceUrls || [])
+      : await this.kling.submit(generation.modelSlug, generation.prompt, opts, opts.referenceUrls || []);
+    if (!job.id) throw new BadRequestException('Provider không trả về mã tác vụ');
     generation.status = job.status || 'pending';
     generation.externalJobId = job.id;
     await this.generations.save(generation);

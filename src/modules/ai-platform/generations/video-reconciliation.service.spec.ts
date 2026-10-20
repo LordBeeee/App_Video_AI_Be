@@ -24,10 +24,15 @@ describe('VideoReconciliationService', () => {
           maxPriceVnd: 100_000,
           usdVndRate: 25_000,
           markupRate: 0.2,
+          request: { units: { usdPerMillionTokens: 10.7 } },
         }),
       ),
     };
     const kling = {
+      getJob: jest.fn(() => Promise.resolve(job)),
+      download: jest.fn(() => Promise.resolve(Buffer.from('video'))),
+    };
+    const seedance = {
       getJob: jest.fn(() => Promise.resolve(job)),
       download: jest.fn(() => Promise.resolve(Buffer.from('video'))),
     };
@@ -52,8 +57,9 @@ describe('VideoReconciliationService', () => {
       assets as never,
       wallets as never,
       {} as never,
+      seedance as never,
     );
-    return { service, generations, kling, cloudinary, assets, wallets };
+    return { service, generations, kling, seedance, cloudinary, assets, wallets };
   }
 
   it('saves the output and settles no more than the quoted maximum', async () => {
@@ -93,5 +99,18 @@ describe('VideoReconciliationService', () => {
       'Provider rejected the job',
     );
     expect(wallets.settle).not.toHaveBeenCalled();
+  });
+
+  it('settles Seedance using actual completion tokens', async () => {
+    const { service, seedance, kling, wallets } = setup({
+      status: 'succeeded', url: 'https://provider.example/video.mp4', units: 100_000,
+    });
+    const item = generation();
+    item.source = 'seedance';
+    await service.reconcile(item);
+    expect(seedance.getJob).toHaveBeenCalledWith('job-1');
+    expect(kling.getJob).not.toHaveBeenCalled();
+    expect(item.actualCostUsd).toBe('1.07');
+    expect(wallets.settle).toHaveBeenCalledWith('hold-1', 32_100, expect.anything());
   });
 });

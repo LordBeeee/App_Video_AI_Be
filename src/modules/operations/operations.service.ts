@@ -133,6 +133,7 @@ export class OperationsService {
         'openrouter',
       ]),
       providerService('kling', 'Kling (video)', ['kling', 'legacy_kling']),
+      providerService('seedance', 'Seedance (video)', ['seedance']),
       {
         key: 'payments',
         label: 'Thanh toán nạp ví',
