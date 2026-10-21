@@ -170,7 +170,7 @@ describe('PricingService option validation', () => {
   });
 
   it('quotes Seedance from output tokens and requires selected frame assets', () => {
-    const model = SEEDANCE_VIDEO_MODELS[0];
+    const model = SEEDANCE_VIDEO_MODELS.find((item) => item.id === 'seedance/seedance-2.5')!;
     expect(() => (service as any).validateOptions('video', model, {
       duration: 5, resolution: '720p', referenceAssetIds: [1],
     })).not.toThrow();
@@ -182,7 +182,7 @@ describe('PricingService option validation', () => {
   });
 
   it('validates Seedance Omni task-specific inputs and settings', () => {
-    const model = SEEDANCE_VIDEO_MODELS[1];
+    const model = SEEDANCE_VIDEO_MODELS.find((item) => item.id === 'seedance/seedance-2.5-omni')!;
     const validate = (options: Record<string, any>) =>
       (service as any).validateOptions('video', model, {
         resolution: '720p', duration: 5, aspectRatio: 'adaptive', ...options,
@@ -199,6 +199,32 @@ describe('PricingService option validation', () => {
     expect(() => validate({ omniTaskType: 'edit', referenceInputs: [video], duration: -1 })).not.toThrow();
     expect(() => validate({ omniTaskType: 'edit', referenceInputs: [video], duration: -1, aspectRatio: '16:9' })).toThrow(BadRequestException);
     expect(() => validate({ omniTaskType: 'extend', referenceInputs: [video] })).not.toThrow();
+  });
+
+  it('validates Seedance 2.0 limits and selects the video-input token rate', () => {
+    const frame = SEEDANCE_VIDEO_MODELS.find((item) => item.id === 'seedance/seedance-2.0')!;
+    const omni = SEEDANCE_VIDEO_MODELS.find((item) => item.id === 'seedance/seedance-2.0-omni')!;
+    const validate = (model: any, options: Record<string, any>) =>
+      (service as any).validateOptions('video', model, {
+        duration: 5, resolution: '720p', ...options,
+      });
+    expect(() => validate(frame, { referenceAssetIds: [1], aspectRatio: '16:9' })).not.toThrow();
+    expect(() => validate(omni, { omniTaskType: 'edit', referenceInputs: [
+      { assetId: 1, type: 'reference_video' },
+    ], aspectRatio: '16:9' })).not.toThrow();
+    expect(() => validate(omni, { omniTaskType: 'reference', referenceInputs: [
+      ...Array.from({ length: 10 }, (_, i) => ({ assetId: i + 1, type: 'reference_image' })),
+    ] })).toThrow(BadRequestException);
+    expect((service as any).seedanceTokenRate(omni, { resolution: '720p', referenceInputs: [
+      { assetId: 1, type: 'reference_video' },
+    ] })).toBe(4.3);
+    expect((service as any).seedanceTokenRate(omni, { resolution: '720p', referenceInputs: [
+      { assetId: 1, type: 'reference_image' },
+    ] })).toBe(7);
+    expect((service as any).videoCost(frame, { duration: 5, resolution: '4k' })).toBeGreaterThan(0);
+    expect((service as any).videoCost(omni, { duration: 5, resolution: '720p', referenceInputs: [
+      { assetId: 1, type: 'reference_video' },
+    ] })).toBeCloseTo((20 * 720 * 720 * 2.5 * 24 / 1024) * 4.3 / 1_000_000 * 1.25);
   });
 
   it('limits Kling 3.0 prompts to 3072 characters when quoting', async () => {

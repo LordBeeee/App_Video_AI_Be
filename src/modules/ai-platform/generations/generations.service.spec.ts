@@ -2,6 +2,25 @@ import { BadRequestException } from '@nestjs/common';
 import { GenerationsService } from './generations.service';
 
 describe('GenerationsService Seedance quote binding', () => {
+  it('routes Seedance 2.0 Omni through the shared Seedance service', async () => {
+    const seedance = { submitOmni: jest.fn().mockResolvedValue({ id: 'task-2', status: 'queued' }) };
+    const generations = { save: jest.fn(async (value: any) => value) };
+    const service = new GenerationsService(
+      generations as never, {} as never, {} as never, {} as never,
+      {} as never, {} as never, {} as never, {} as never,
+      {} as never, {} as never, {} as never, {} as never, seedance as never,
+    );
+    const generation = { prompt: 'Extend @video_1', options: { omniTaskType: 'extend' } };
+    await (service as any).createVideo(generation, {
+      provider: 'seedance', apiModel: 'dreamina-seedance-2-0-260128',
+      capabilities: { omniTaskTypes: ['reference', 'edit', 'extend'] },
+    });
+    expect(seedance.submitOmni).toHaveBeenCalledWith(
+      generation.prompt, generation.options, 'dreamina-seedance-2-0-260128',
+    );
+    expect(generation).toMatchObject({ status: 'queued', externalJobId: 'task-2' });
+  });
+
   it('rejects changed frame assets before holding the wallet', async () => {
     const wallets = { hold: jest.fn() };
     const service = new GenerationsService(

@@ -1,6 +1,66 @@
 // BytePlus ModelArk: https://docs.byteplus.com/en/docs/modelark/create-video-generation-task-api
 export const SEEDANCE_VIDEO_MODELS = [
   {
+    id: 'seedance/seedance-2.0',
+    name: 'Seedance: 2.0',
+    provider: 'seedance',
+    apiModel: 'dreamina-seedance-2-0-260128',
+    modality: 'video',
+    description: 'Tạo video từ ảnh đầu hoặc ảnh đầu/cuối, có thể tạo âm thanh.',
+    capabilities: {
+      resolutions: ['480p', '720p', '1080p', '4k'],
+      durations: [-1, ...Array.from({ length: 12 }, (_, i) => i + 4)],
+      aspectRatios: ['adaptive', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+      frameImages: ['first_frame', 'last_frame'],
+      maxReferenceImages: 2,
+      requiresImage: true,
+      generateAudio: true,
+      maxImageMb: 10,
+      maxPromptCharacters: 2500,
+    },
+    pricing: {
+      unitType: 'output_token',
+      source: 'https://docs.byteplus.com/en/docs/modelark/model-pricing',
+      perMillionTokens: {
+        '480p': { withoutVideo: 7, withVideo: 4.3 },
+        '720p': { withoutVideo: 7, withVideo: 4.3 },
+        '1080p': { withoutVideo: 7.7, withVideo: 4.7 },
+        '4k': { withoutVideo: 4, withVideo: 2.4 },
+      },
+    },
+  },
+  {
+    id: 'seedance/seedance-2.0-omni',
+    name: 'Seedance: 2.0 Omni',
+    provider: 'seedance',
+    apiModel: 'dreamina-seedance-2-0-260128',
+    modality: 'video',
+    description: 'Tạo, chỉnh sửa hoặc kéo dài video từ ảnh, video và âm thanh tham chiếu.',
+    capabilities: {
+      resolutions: ['480p', '720p', '1080p', '4k'],
+      durations: [-1, ...Array.from({ length: 12 }, (_, i) => i + 4)],
+      aspectRatios: ['adaptive', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+      omniTaskTypes: ['reference', 'edit', 'extend'],
+      maxReferenceImages: 9,
+      maxReferenceVideos: 3,
+      maxReferenceAudios: 3,
+      maxReferenceVideoSeconds: 15,
+      maxReferenceAudioSeconds: 15,
+      generateAudio: true,
+      maxPromptCharacters: 2500,
+    },
+    pricing: {
+      unitType: 'output_token',
+      source: 'https://docs.byteplus.com/en/docs/modelark/model-pricing',
+      perMillionTokens: {
+        '480p': { withoutVideo: 7, withVideo: 4.3 },
+        '720p': { withoutVideo: 7, withVideo: 4.3 },
+        '1080p': { withoutVideo: 7.7, withVideo: 4.7 },
+        '4k': { withoutVideo: 4, withVideo: 2.4 },
+      },
+    },
+  },
+  {
     id: 'seedance/seedance-2.5',
     name: 'Seedance: 2.5',
     provider: 'seedance',
@@ -35,6 +95,7 @@ export const SEEDANCE_VIDEO_MODELS = [
       durations: [-1, ...Array.from({ length: 27 }, (_, i) => i + 4)],
       aspectRatios: ['adaptive', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
       omniTaskTypes: ['reference', 'edit', 'extend'],
+      locksOmniOutput: true,
       maxReferenceImages: 30,
       maxReferenceVideos: 10,
       maxReferenceAudios: 10,
@@ -44,7 +105,11 @@ export const SEEDANCE_VIDEO_MODELS = [
     pricing: {
       unitType: 'output_token',
       source: 'https://docs.byteplus.com/en/docs/modelark/model-pricing',
-      perMillionTokens: { '480p': 10.7, '720p': 10.7, '1080p': 11.7 },
+      perMillionTokens: {
+        '480p': { withoutVideo: 10.7, withVideo: 6.4 },
+        '720p': { withoutVideo: 10.7, withVideo: 6.4 },
+        '1080p': { withoutVideo: 11.7, withVideo: 7 },
+      },
     },
   },
 ] as const;

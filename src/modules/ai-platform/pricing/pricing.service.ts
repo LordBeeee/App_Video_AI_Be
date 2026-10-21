@@ -92,37 +92,41 @@ export class PricingService {
       checkImage('seed', 'seed', 'Seed');
     }
     if (modality === 'video') {
-      if (model.id === 'seedance/seedance-2.5') {
+      if (model.provider === 'seedance' && !model.capabilities?.omniTaskTypes) {
         const ids = options.referenceAssetIds;
         if (!Array.isArray(ids) || ids.length < 1 || ids.length > 2 ||
           ids.some((id: unknown) => !Number.isSafeInteger(id) || Number(id) < 1) ||
           new Set(ids).size !== ids.length) {
           throw new BadRequestException('Seedance cần 1 ảnh đầu và tối đa 1 ảnh cuối');
         }
-        if (options.aspectRatio || options.referenceInputs || options.referenceMode ||
+        if ((model.id === 'seedance/seedance-2.5' && options.aspectRatio) ||
+          options.omniTaskType || options.referenceInputs || options.referenceMode ||
           options.elementAssetIds?.length || options.multiShot || options.customShots ||
           options.audioMode || options.size || options.seed) {
           throw new BadRequestException('Tùy chọn không được Seedance image-to-video hỗ trợ');
         }
       }
-      if (model.id === 'seedance/seedance-2.5-omni') {
+      if (model.provider === 'seedance' && model.capabilities?.omniTaskTypes) {
         const inputs = options.referenceInputs;
         const task = options.omniTaskType;
+        const isSeedance25 = model.id === 'seedance/seedance-2.5-omni';
+        const caps = model.capabilities;
         if (!['reference', 'edit', 'extend'].includes(task) ||
           !Number.isInteger(options.duration) ||
-          !Array.isArray(inputs) || inputs.length < 1 || inputs.length > 50 ||
+          !Array.isArray(inputs) || inputs.length < 1 ||
+          inputs.length > caps.maxReferenceImages + caps.maxReferenceVideos + caps.maxReferenceAudios ||
           inputs.some((input: any) => !input ||
             !Number.isSafeInteger(input.assetId) || input.assetId < 1 ||
             !['reference_image', 'reference_video', 'reference_audio'].includes(input.type)) ||
           new Set(inputs.map((input: any) => input.assetId)).size !== inputs.length ||
-          inputs.filter((input: any) => input.type === 'reference_image').length > 30 ||
-          inputs.filter((input: any) => input.type === 'reference_video').length > 10 ||
-          inputs.filter((input: any) => input.type === 'reference_audio').length > 10 ||
+          inputs.filter((input: any) => input.type === 'reference_image').length > caps.maxReferenceImages ||
+          inputs.filter((input: any) => input.type === 'reference_video').length > caps.maxReferenceVideos ||
+          inputs.filter((input: any) => input.type === 'reference_audio').length > caps.maxReferenceAudios ||
           (task === 'reference' && !inputs.some((input: any) =>
             ['reference_image', 'reference_video'].includes(input.type))) ||
           (task !== 'reference' && !inputs.some((input: any) => input.type === 'reference_video')) ||
-          (task === 'edit' && Number(options.duration) !== -1) ||
-          (task !== 'reference' && ![undefined, 'adaptive'].includes(options.aspectRatio)) ||
+          (isSeedance25 && task === 'edit' && Number(options.duration) !== -1) ||
+          (isSeedance25 && task !== 'reference' && ![undefined, 'adaptive'].includes(options.aspectRatio)) ||
           options.referenceMode || options.elementAssetIds?.length ||
           options.multiShot || options.customShots || options.audioMode ||
           options.size || options.seed) {
@@ -290,16 +294,19 @@ export class PricingService {
   private videoCost(model: any, options: Record<string, any>) {
     if (model.provider === 'seedance') {
       const resolution = String(options.resolution || '720p');
-      const duration = Number(options.duration === -1 ? 30 : options.duration || 5);
+      const duration = Number(options.duration === -1
+        ? Math.max(...model.capabilities.durations) : options.duration || 5);
+      const hasVideo = options.referenceInputs?.some((input: any) => input.type === 'reference_video');
+      const inputDuration = hasVideo ? Number(model.capabilities.maxReferenceVideoSeconds || 30) : 0;
       // BytePlus bills output tokens; reserve above the documented estimate.
       const shortSide: Record<string, number> = {
-        '480p': 480, '720p': 720, '1080p': 1080,
+        '480p': 480, '720p': 720, '1080p': 1080, '4k': 2160,
       };
       const side = shortSide[resolution];
-      const rate = Number(model.pricing.perMillionTokens[resolution]);
+      const rate = this.seedanceTokenRate(model, options);
       if (!side || !Number.isFinite(rate)) return 0;
       // Input image ratio may reach 2.5:1; reserve for the largest output canvas.
-      return (duration * side * side * 2.5 * 24 / 1024) * rate / 1_000_000 * 1.25;
+      return ((duration + inputDuration) * side * side * 2.5 * 24 / 1024) * rate / 1_000_000 * 1.25;
     }
     if (model.provider === 'kling') {
       const resolution = String(
@@ -357,6 +364,12 @@ export class PricingService {
     return sku.toLowerCase().includes('second')
       ? unitCost * (this.number(options.duration) || 1)
       : unitCost;
+  }
+
+  private seedanceTokenRate(model: any, options: Record<string, any>) {
+    const rate = model.pricing.perMillionTokens[options.resolution || '720p'];
+    const hasVideo = options.referenceInputs?.some((input: any) => input.type === 'reference_video');
+    return Number(typeof rate === 'number' ? rate : rate?.[hasVideo ? 'withVideo' : 'withoutVideo']);
   }
 
   private audioCost(model: any, prompt: string) {
@@ -426,7 +439,7 @@ export class PricingService {
     }
     if (request.modality === 'video' && model.provider === 'seedance') {
       units = {
-        usdPerMillionTokens: model.pricing.perMillionTokens[options.resolution || '720p'],
+        usdPerMillionTokens: this.seedanceTokenRate(model, options),
         basis: model.pricing.source,
       };
     }

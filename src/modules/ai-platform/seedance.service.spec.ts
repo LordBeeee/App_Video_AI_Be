@@ -89,4 +89,25 @@ describe('SeedanceService image-to-video API', () => {
       data: expect.objectContaining({ omni_reference_task_type: 'reference', ratio: '16:9', duration: 5 }),
     }));
   });
+
+  it('submits Seedance 2.0 frames with the selected model and ratio', async () => {
+    const request = jest.spyOn(axios, 'request').mockResolvedValue({ data: { id: 'frame-2' } });
+    await service.submit('A moving landscape', { duration: 5, resolution: '4k', aspectRatio: '16:9' },
+      ['https://example.com/frame.png'], 'dreamina-seedance-2-0-260128');
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+      model: 'dreamina-seedance-2-0-260128', ratio: '16:9', resolution: '4k',
+    }) }));
+  });
+
+  it('omits the 2.5 task hint when submitting Seedance 2.0 Omni', async () => {
+    const request = jest.spyOn(axios, 'request').mockResolvedValue({ data: { id: 'omni-2' } });
+    await service.submitOmni('Extend @video_1', {
+      omniTaskType: 'extend', duration: 5, resolution: '720p', aspectRatio: '16:9',
+      referenceInputs: [{ assetId: 1, type: 'reference_video', url: 'https://example.com/video.mp4' }],
+    }, 'dreamina-seedance-2-0-260128');
+    const data = request.mock.calls[0][0].data as Record<string, any>;
+    expect(data).toMatchObject({ model: 'dreamina-seedance-2-0-260128', ratio: '16:9' });
+    expect(data).not.toHaveProperty('omni_reference_task_type');
+    expect(data).not.toHaveProperty('draft');
+  });
 });

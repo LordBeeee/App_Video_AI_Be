@@ -28,7 +28,8 @@ export class SeedanceService {
     }
   }
 
-  async submit(prompt: string, options: Record<string, any>, references: string[]) {
+  async submit(prompt: string, options: Record<string, any>, references: string[],
+    apiModel = 'dreamina-seedance-2-5-260628') {
     if (references.length < 1 || references.length > 2)
       throw new BadRequestException('Seedance cần 1 ảnh đầu và tối đa 1 ảnh cuối');
     const content: Record<string, any>[] = [
@@ -39,20 +40,22 @@ export class SeedanceService {
       type: 'image_url', image_url: { url: references[1] }, role: 'last_frame',
     });
     const task = await this.request('POST', '', {
-      model: 'dreamina-seedance-2-5-260628',
+      model: apiModel,
       content,
-      duration: Number(options.duration || 5),
+      duration: Number(options.duration ?? 5),
       resolution: String(options.resolution || '720p'),
-      ratio: 'adaptive',
+      ratio: apiModel === 'dreamina-seedance-2-5-260628'
+        ? 'adaptive' : String(options.aspectRatio || 'adaptive'),
       generate_audio: !!options.generateAudio,
       watermark: false,
-      draft: false,
+      ...(apiModel === 'dreamina-seedance-2-5-260628' ? { draft: false } : {}),
       return_last_frame: true,
     });
     return { id: String(task?.id || ''), status: String(task?.status || 'queued') };
   }
 
-  async submitOmni(prompt: string, options: Record<string, any>) {
+  async submitOmni(prompt: string, options: Record<string, any>,
+    apiModel = 'dreamina-seedance-2-5-260628') {
     const counts = { image: 0, video: 0, audio: 0 };
     const mentions = new Map<string, string>();
     for (const input of options.referenceInputs || []) {
@@ -76,16 +79,17 @@ export class SeedanceService {
       });
     }
     const task = await this.request('POST', '', {
-      model: 'dreamina-seedance-2-5-260628',
+      model: apiModel,
       content,
-      omni_reference_task_type: options.omniTaskType,
+      ...(apiModel === 'dreamina-seedance-2-5-260628'
+        ? { omni_reference_task_type: options.omniTaskType } : {}),
       duration: Number(options.duration),
       resolution: String(options.resolution || '720p'),
-      ratio: options.omniTaskType === 'reference'
+      ratio: apiModel !== 'dreamina-seedance-2-5-260628' || options.omniTaskType === 'reference'
         ? String(options.aspectRatio || 'adaptive') : 'adaptive',
       generate_audio: !!options.generateAudio,
       watermark: false,
-      draft: false,
+      ...(apiModel === 'dreamina-seedance-2-5-260628' ? { draft: false } : {}),
       return_last_frame: true,
     });
     return { id: String(task?.id || ''), status: String(task?.status || 'queued') };
