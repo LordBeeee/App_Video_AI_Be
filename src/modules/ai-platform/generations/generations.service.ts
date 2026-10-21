@@ -247,12 +247,15 @@ export class GenerationsService {
             asset.width / asset.height < 0.4 || asset.width / asset.height > 2 ||
             asset.fps == null || asset.fps < 24 || asset.fps > 60;
         }
+        if (asset.assetType === 'image' &&
+          ((asset.width != null && asset.width < 300) ||
+            (asset.height != null && asset.height < 300))) {
+          throw new BadRequestException('Ảnh cần có chiều rộng và chiều cao tối thiểu 300 px.');
+        }
         return asset.assetType !== 'image' ||
           !(isSeedance
             ? ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(asset.mimeType || '')
             : ['image/jpeg', 'image/png'].includes(asset.mimeType || '')) ||
-          (asset.width != null && asset.width < 300) ||
-          (asset.height != null && asset.height < 300) ||
           (asset.width != null && asset.height != null &&
             (asset.width / asset.height < 0.4 || asset.width / asset.height > 2.5)) ||
           (asset.fileSizeBytes != null &&
@@ -463,6 +466,7 @@ export class GenerationsService {
         uploaded.secure_url,
         {
           generationId: generation.id,
+          fileSizeBytes: uploaded.bytes,
         },
       );
     }
@@ -503,7 +507,7 @@ export class GenerationsService {
     const providerGenerationId = String(
       response.headers['x-generation-id'] || '',
     );
-    const { secureUrl: url, durationSeconds } = await this.cloudinary.uploadAudioBuffer(
+    const { secureUrl: url, durationSeconds, fileSizeBytes } = await this.cloudinary.uploadAudioBuffer(
       Buffer.from(response.data),
       `ai-generation/users/${generation.userId}/audio`,
       generation.id,
@@ -517,6 +521,7 @@ export class GenerationsService {
         generationId: generation.id,
         durationSeconds,
         mediaDurationSeconds: durationSeconds,
+        fileSizeBytes,
       },
     );
     const actualUsd = await this.resolveActualCost(

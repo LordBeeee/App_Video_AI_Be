@@ -41,10 +41,11 @@ describe('VideoReconciliationService', () => {
         Promise.resolve({
           secure_url: 'https://example.com/video.mp4',
           thumbnail_url: 'https://example.com/thumbnail.jpg',
+          bytes: 12_345_678,
         }),
       ),
       uploadBuffer: jest.fn(() =>
-        Promise.resolve({ secure_url: 'https://example.com/last.jpg' }),
+        Promise.resolve({ secure_url: 'https://example.com/last.jpg', bytes: 234_567 }),
       ),
     };
     const assets = { saveOutput: jest.fn(() => Promise.resolve(undefined)) };
@@ -79,6 +80,10 @@ describe('VideoReconciliationService', () => {
     expect(item.status).toBe('succeeded');
     expect(item.chargedVnd).toBe(100_000);
     expect(assets.saveOutput).toHaveBeenCalledTimes(1);
+    expect(assets.saveOutput).toHaveBeenCalledWith(
+      'generation-1', 7, 'video', 'https://example.com/video.mp4',
+      expect.objectContaining({ fileSizeBytes: 12_345_678 }),
+    );
     expect(wallets.settle).toHaveBeenCalledWith('hold-1', 100_000, {
       generationId: 'generation-1',
       modality: 'video',
@@ -96,12 +101,30 @@ describe('VideoReconciliationService', () => {
     await service.reconcile(item);
 
     expect(item.status).toBe('failed');
+    expect(item.errorMessage).toBe('Provider rejected the job');
     expect(assets.saveOutput).not.toHaveBeenCalled();
     expect(wallets.release).toHaveBeenCalledWith(
       'hold-1',
       'Provider rejected the job',
     );
     expect(wallets.settle).not.toHaveBeenCalled();
+  });
+
+  it('keeps the job pending and retries when saving to Cloudinary fails temporarily', async () => {
+    const { service, cloudinary, assets, wallets } = setup({
+      status: 'succeeded', url: 'https://provider.example/video.mp4',
+    });
+    const item = generation();
+    cloudinary.uploadVideoBuffer.mockRejectedValueOnce(new Error('Cloudinary: upload timed out'));
+    await expect(service.reconcile(item)).rejects.toThrow('Cloudinary: upload timed out');
+    expect(item.status).toBe('processing');
+    expect(assets.saveOutput).not.toHaveBeenCalled();
+    expect(wallets.release).not.toHaveBeenCalled();
+    expect(wallets.settle).not.toHaveBeenCalled();
+
+    await service.reconcile(item);
+    expect(item.status).toBe('succeeded');
+    expect(wallets.settle).toHaveBeenCalledTimes(1);
   });
 
   it('settles Seedance using actual completion tokens', async () => {
@@ -137,7 +160,7 @@ describe('VideoReconciliationService', () => {
     );
     expect(assets.saveOutput).toHaveBeenCalledWith(
       'generation-1', 7, 'image', 'https://example.com/last.jpg',
-      { generationId: 'generation-1', mimeType: 'image/jpeg' }, 'last_frame',
+      { generationId: 'generation-1', mimeType: 'image/jpeg', fileSizeBytes: 234_567 }, 'last_frame',
     );
     expect(item.status).toBe('succeeded');
   });

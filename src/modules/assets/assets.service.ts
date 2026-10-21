@@ -38,8 +38,8 @@ export class AssetsService {
     if (isImage && file.size > MAX_IMAGE_UPLOAD_BYTES) {
       throw new BadRequestException('Ảnh tải lên không được vượt quá 10 MB');
     }
-    if (isVideo && file.size > 200_000_000) {
-      throw new BadRequestException('Video tải lên không được vượt quá 200 MB');
+    if ((isVideo || isAudio) && file.size > 100_000_000) {
+      throw new BadRequestException(`${isAudio ? 'Âm thanh' : 'Video'} tải lên không được vượt quá 100 MB`);
     }
 
     const assetType = isVideo ? 'video' : isAudio ? 'audio' : 'image';
@@ -58,7 +58,7 @@ export class AssetsService {
         folder,
         publicId,
       );
-      result = { secure_url: audio.secureUrl, duration: audio.durationSeconds };
+      result = { secure_url: audio.secureUrl, duration: audio.durationSeconds, bytes: audio.fileSizeBytes };
     } else {
       result = await this.cloudinaryService.uploadBuffer(
         file.buffer,
@@ -79,7 +79,7 @@ export class AssetsService {
         originalUrl: result.secure_url,
         storageProvider: 'cloudinary',
         mimeType: file.mimetype,
-        fileSizeBytes: file.size,
+        fileSizeBytes: result.bytes ?? file.size,
         durationSeconds: result.duration ? Math.round(result.duration) : null,
         fps: result.frame_rate ? Math.round(result.frame_rate) : null,
         width: result.width ?? null,

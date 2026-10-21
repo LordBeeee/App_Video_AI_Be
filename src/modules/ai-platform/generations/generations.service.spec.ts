@@ -84,6 +84,17 @@ describe('GenerationsService Kling Element validation', () => {
     expect(wallets.hold).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { width: 299, height: 500 },
+    { width: 500, height: 299 },
+  ])('rejects a frame smaller than 300 px before reserving payment: %j', async (dimensions) => {
+    assets.find.mockResolvedValueOnce([{ ...frame, ...dimensions }]);
+    await expect(service.create(7, {
+      quoteId: 'quote-1', prompt: 'The hero waves', referenceAssetIds: [1],
+    })).rejects.toThrow('Ảnh cần có chiều rộng và chiều cao tối thiểu 300 px.');
+    expect(wallets.hold).not.toHaveBeenCalled();
+  });
+
   it('rejects an Element that is still processing before reserving payment', async () => {
     assets.find.mockResolvedValueOnce([frame]).mockResolvedValueOnce([
       {

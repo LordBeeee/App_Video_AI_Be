@@ -40,7 +40,7 @@ export class GenerationAssetsService {
             : modality === 'audio'
               ? 'audio/mpeg'
               : 'video/mp4',
-        fileSizeBytes: null,
+        fileSizeBytes: metadata.fileSizeBytes ?? null,
         durationSeconds: metadata.durationSeconds != null ? Math.round(Number(metadata.durationSeconds)) : null,
         fps: metadata.fps != null ? Math.round(Number(metadata.fps)) : null,
         width: metadata.width ?? null,

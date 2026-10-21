@@ -110,6 +110,7 @@ export class VideoReconciliationService
           'video',
           uploaded.secure_url,
           { generationId: generation.id, thumbnailUrl: uploaded.thumbnail_url,
+            fileSizeBytes: uploaded.bytes,
             durationSeconds: uploaded.duration, mediaDurationSeconds: uploaded.duration,
             width: uploaded.width,
             height: uploaded.height, fps: uploaded.frame_rate },
@@ -129,7 +130,7 @@ export class VideoReconciliationService
               generation.userId,
               'image',
               image.secure_url,
-              { generationId: generation.id, mimeType: 'image/jpeg' },
+              { generationId: generation.id, mimeType: 'image/jpeg', fileSizeBytes: image.bytes },
               'last_frame',
             );
           } catch (error) {

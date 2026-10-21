@@ -1,10 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { BadGatewayException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
 import * as streamifier from 'streamifier';
 
 @Injectable()
 export class CloudinaryService {
+  private uploadError(error: { message?: string }) {
+    return new BadGatewayException(`Cloudinary: ${error.message || 'Tải file lên thất bại. Vui lòng thử lại.'}`);
+  }
+
   constructor(private configService: ConfigService) {
     cloudinary.config({
       cloud_name: this.configService.getOrThrow('CLOUDINARY_CLOUD_NAME'),
@@ -32,7 +36,7 @@ export class CloudinaryService {
           resource_type: 'image',
         },
         (error, result) => {
-          if (error) return reject(error);
+          if (error) return reject(this.uploadError(error));
           resolve(result!);
         },
       );
@@ -55,7 +59,7 @@ export class CloudinaryService {
           resource_type: 'video',
         },
         (error, result) => {
-          if (error) return reject(error);
+          if (error) return reject(this.uploadError(error));
           resolve(result!.secure_url);
         },
       );
@@ -66,15 +70,16 @@ export class CloudinaryService {
     buffer: Buffer,
     folder: string,
     publicId: string,
-  ): Promise<{ secureUrl: string; durationSeconds: number | null }> {
+  ): Promise<{ secureUrl: string; durationSeconds: number | null; fileSizeBytes: number | null }> {
     return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         { folder, public_id: publicId, resource_type: 'video', format: 'mp3' },
         (error, result) => {
-          if (error) return reject(error);
+          if (error) return reject(this.uploadError(error));
           resolve({
             secureUrl: result!.secure_url,
             durationSeconds: result!.duration ?? null,
+            fileSizeBytes: result!.bytes ?? null,
           });
         },
       );
@@ -129,6 +134,7 @@ export class CloudinaryService {
     height?: number;
     frame_rate?: number;
     thumbnail_url: string;
+    bytes?: number;
   }> {
     return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
@@ -138,7 +144,7 @@ export class CloudinaryService {
           resource_type: 'video',
         },
         (error, result) => {
-          if (error) return reject(error);
+          if (error) return reject(this.uploadError(error));
 
           const thumbnailUrl = cloudinary.url(result!.public_id, {
             resource_type: 'video',
@@ -154,6 +160,7 @@ export class CloudinaryService {
             height: result!.height,
             frame_rate: (result as any)!.frame_rate,
             thumbnail_url: thumbnailUrl,
+            bytes: result!.bytes,
           });
         },
       );
