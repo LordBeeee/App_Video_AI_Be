@@ -189,7 +189,11 @@ describe('PricingService option validation', () => {
       });
     const image = { assetId: 1, type: 'reference_image' };
     const video = { assetId: 2, type: 'reference_video' };
+    const audio = { assetId: 3, type: 'reference_audio' };
     expect(() => validate({ omniTaskType: 'reference', referenceInputs: [image], aspectRatio: '16:9' })).not.toThrow();
+    expect(() => validate({ omniTaskType: 'reference', referenceInputs: [video] })).not.toThrow();
+    expect(() => validate({ omniTaskType: 'reference', referenceInputs: [image, audio] })).not.toThrow();
+    expect(() => validate({ omniTaskType: 'reference', referenceInputs: [audio] })).toThrow(BadRequestException);
     expect(() => validate({ omniTaskType: 'reference', referenceInputs: [{ assetId: 1, type: 'first_frame' }] })).toThrow(BadRequestException);
     expect(() => validate({ omniTaskType: 'edit', referenceInputs: [image], duration: -1 })).toThrow(BadRequestException);
     expect(() => validate({ omniTaskType: 'edit', referenceInputs: [video], duration: -1 })).not.toThrow();

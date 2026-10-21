@@ -118,6 +118,8 @@ export class PricingService {
           inputs.filter((input: any) => input.type === 'reference_image').length > 30 ||
           inputs.filter((input: any) => input.type === 'reference_video').length > 10 ||
           inputs.filter((input: any) => input.type === 'reference_audio').length > 10 ||
+          (task === 'reference' && !inputs.some((input: any) =>
+            ['reference_image', 'reference_video'].includes(input.type))) ||
           (task !== 'reference' && !inputs.some((input: any) => input.type === 'reference_video')) ||
           (task === 'edit' && Number(options.duration) !== -1) ||
           (task !== 'reference' && ![undefined, 'adaptive'].includes(options.aspectRatio)) ||
