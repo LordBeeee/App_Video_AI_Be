@@ -109,8 +109,35 @@ export class VideoReconciliationService
           generation.userId,
           'video',
           uploaded.secure_url,
-          { generationId: generation.id, thumbnailUrl: uploaded.thumbnail_url },
+          { generationId: generation.id, thumbnailUrl: uploaded.thumbnail_url,
+            durationSeconds: uploaded.duration, mediaDurationSeconds: uploaded.duration,
+            width: uploaded.width,
+            height: uploaded.height, fps: uploaded.frame_rate },
         );
+        const lastFrameUrl = 'lastFrameUrl' in job && typeof job.lastFrameUrl === 'string'
+          ? job.lastFrameUrl : undefined;
+        if (isSeedance && lastFrameUrl) {
+          try {
+            const lastFrame = await this.seedance.download(lastFrameUrl);
+            const image = await this.cloudinary.uploadBuffer(
+              lastFrame,
+              `ai-generation/users/${generation.userId}/images`,
+              `${generation.id}_last_frame`,
+            );
+            await this.outputAssets.saveOutput(
+              generation.id,
+              generation.userId,
+              'image',
+              image.secure_url,
+              { generationId: generation.id, mimeType: 'image/jpeg' },
+              'last_frame',
+            );
+          } catch (error) {
+            this.logger.warn(
+              `Không thể lưu ảnh cuối của video ${generation.id}: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
         const quote = await this.quotes.findOneOrFail({
           where: { id: generation.quoteId },
         });

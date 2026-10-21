@@ -45,6 +45,48 @@ export class SeedanceService {
       resolution: String(options.resolution || '720p'),
       ratio: 'adaptive',
       generate_audio: !!options.generateAudio,
+      watermark: false,
+      draft: false,
+      return_last_frame: true,
+    });
+    return { id: String(task?.id || ''), status: String(task?.status || 'queued') };
+  }
+
+  async submitOmni(prompt: string, options: Record<string, any>) {
+    const counts = { image: 0, video: 0, audio: 0 };
+    const mentions = new Map<string, string>();
+    for (const input of options.referenceInputs || []) {
+      const kind = input.type === 'reference_image' ? 'image'
+        : input.type === 'reference_video' ? 'video' : 'audio';
+      mentions.set(`@${kind}_${input.assetId}`, `@${kind[0].toUpperCase()}${kind.slice(1)} ${++counts[kind]}`);
+    }
+    const providerPrompt = prompt.replace(/@(image|video|audio)_(\d+)/g, (mention) => {
+      const mapped = mentions.get(mention);
+      if (!mapped) throw new BadRequestException(`Tài nguyên ${mention} không còn được chọn`);
+      return mapped;
+    });
+    const content: Record<string, any>[] = [{ type: 'text', text: providerPrompt }];
+    for (const input of options.referenceInputs || []) {
+      const kind = input.type === 'reference_image' ? 'image'
+        : input.type === 'reference_video' ? 'video' : 'audio';
+      content.push({
+        type: `${kind}_url`,
+        [`${kind}_url`]: { url: input.url },
+        role: input.type,
+      });
+    }
+    const task = await this.request('POST', '', {
+      model: 'dreamina-seedance-2-5-260628',
+      content,
+      omni_reference_task_type: options.omniTaskType,
+      duration: Number(options.duration),
+      resolution: String(options.resolution || '720p'),
+      ratio: options.omniTaskType === 'reference'
+        ? String(options.aspectRatio || 'adaptive') : 'adaptive',
+      generate_audio: !!options.generateAudio,
+      watermark: false,
+      draft: false,
+      return_last_frame: true,
     });
     return { id: String(task?.id || ''), status: String(task?.status || 'queued') };
   }
@@ -54,6 +96,8 @@ export class SeedanceService {
     return {
       status: String(task?.status || ''),
       url: task?.content?.video_url ? String(task.content.video_url) : undefined,
+      lastFrameUrl: task?.content?.last_frame_url
+        ? String(task.content.last_frame_url) : undefined,
       error: task?.error?.message || task?.error,
       units: Number(task?.usage?.completion_tokens),
       costUsd: undefined as number | undefined,

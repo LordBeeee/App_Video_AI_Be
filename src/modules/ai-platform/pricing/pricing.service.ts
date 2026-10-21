@@ -92,7 +92,7 @@ export class PricingService {
       checkImage('seed', 'seed', 'Seed');
     }
     if (modality === 'video') {
-      if (model.provider === 'seedance') {
+      if (model.id === 'seedance/seedance-2.5') {
         const ids = options.referenceAssetIds;
         if (!Array.isArray(ids) || ids.length < 1 || ids.length > 2 ||
           ids.some((id: unknown) => !Number.isSafeInteger(id) || Number(id) < 1) ||
@@ -105,8 +105,30 @@ export class PricingService {
           throw new BadRequestException('Tùy chọn không được Seedance image-to-video hỗ trợ');
         }
       }
+      if (model.id === 'seedance/seedance-2.5-omni') {
+        const inputs = options.referenceInputs;
+        const task = options.omniTaskType;
+        if (!['reference', 'edit', 'extend'].includes(task) ||
+          !Number.isInteger(options.duration) ||
+          !Array.isArray(inputs) || inputs.length < 1 || inputs.length > 50 ||
+          inputs.some((input: any) => !input ||
+            !Number.isSafeInteger(input.assetId) || input.assetId < 1 ||
+            !['reference_image', 'reference_video', 'reference_audio'].includes(input.type)) ||
+          new Set(inputs.map((input: any) => input.assetId)).size !== inputs.length ||
+          inputs.filter((input: any) => input.type === 'reference_image').length > 30 ||
+          inputs.filter((input: any) => input.type === 'reference_video').length > 10 ||
+          inputs.filter((input: any) => input.type === 'reference_audio').length > 10 ||
+          (task !== 'reference' && !inputs.some((input: any) => input.type === 'reference_video')) ||
+          (task === 'edit' && Number(options.duration) !== -1) ||
+          (task !== 'reference' && ![undefined, 'adaptive'].includes(options.aspectRatio)) ||
+          options.referenceMode || options.elementAssetIds?.length ||
+          options.multiShot || options.customShots || options.audioMode ||
+          options.size || options.seed) {
+          throw new BadRequestException('Tài nguyên hoặc tùy chọn Seedance Omni không hợp lệ');
+        }
+      }
       const omniInputs = options.referenceInputs;
-      if (omniInputs != null) {
+      if (omniInputs != null && model.id === 'kling/kling-3.0-omni') {
         if (
           model.id !== 'kling/kling-3.0-omni' ||
           !Array.isArray(omniInputs) ||
@@ -266,7 +288,7 @@ export class PricingService {
   private videoCost(model: any, options: Record<string, any>) {
     if (model.provider === 'seedance') {
       const resolution = String(options.resolution || '720p');
-      const duration = Number(options.duration || 5);
+      const duration = Number(options.duration === -1 ? 30 : options.duration || 5);
       // BytePlus bills output tokens; reserve above the documented estimate.
       const shortSide: Record<string, number> = {
         '480p': 480, '720p': 720, '1080p': 1080,

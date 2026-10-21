@@ -18,6 +18,7 @@ export class GenerationAssetsService {
     modality: string,
     url: string,
     metadata: Record<string, any> = {},
+    role: AiGenerationAsset['role'] = 'output',
   ) {
     const asset = await this.assets.save(
       this.assets.create({
@@ -35,21 +36,21 @@ export class GenerationAssetsService {
         storageProvider: 'cloudinary',
         mimeType:
           modality === 'image'
-            ? 'image/png'
+            ? String(metadata.mimeType || 'image/png')
             : modality === 'audio'
               ? 'audio/mpeg'
               : 'video/mp4',
         fileSizeBytes: null,
-        durationSeconds: null,
-        fps: null,
-        width: null,
-        height: null,
+        durationSeconds: metadata.durationSeconds != null ? Math.round(Number(metadata.durationSeconds)) : null,
+        fps: metadata.fps != null ? Math.round(Number(metadata.fps)) : null,
+        width: metadata.width ?? null,
+        height: metadata.height ?? null,
         isFavorite: false,
         metadata,
       }),
     );
     await this.links.save(
-      this.links.create({ generationId, assetId: asset.id, role: 'output' }),
+      this.links.create({ generationId, assetId: asset.id, role }),
     );
     return asset;
   }

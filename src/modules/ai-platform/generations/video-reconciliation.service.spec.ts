@@ -43,6 +43,9 @@ describe('VideoReconciliationService', () => {
           thumbnail_url: 'https://example.com/thumbnail.jpg',
         }),
       ),
+      uploadBuffer: jest.fn(() =>
+        Promise.resolve({ secure_url: 'https://example.com/last.jpg' }),
+      ),
     };
     const assets = { saveOutput: jest.fn(() => Promise.resolve(undefined)) };
     const wallets = {
@@ -112,5 +115,30 @@ describe('VideoReconciliationService', () => {
     expect(kling.getJob).not.toHaveBeenCalled();
     expect(item.actualCostUsd).toBe('1.07');
     expect(wallets.settle).toHaveBeenCalledWith('hold-1', 32_100, expect.anything());
+  });
+
+  it('stores Seedance last frame as a downloadable output asset', async () => {
+    const { service, seedance, cloudinary, assets } = setup({
+      status: 'succeeded',
+      url: 'https://provider.example/video.mp4',
+      lastFrameUrl: 'https://provider.example/last.jpg',
+      units: 100_000,
+    });
+    const item = generation();
+    item.source = 'seedance';
+
+    await service.reconcile(item);
+
+    expect(seedance.download).toHaveBeenCalledWith('https://provider.example/last.jpg');
+    expect(cloudinary.uploadBuffer).toHaveBeenCalledWith(
+      Buffer.from('video'),
+      'ai-generation/users/7/images',
+      'generation-1_last_frame',
+    );
+    expect(assets.saveOutput).toHaveBeenCalledWith(
+      'generation-1', 7, 'image', 'https://example.com/last.jpg',
+      { generationId: 'generation-1', mimeType: 'image/jpeg' }, 'last_frame',
+    );
+    expect(item.status).toBe('succeeded');
   });
 });

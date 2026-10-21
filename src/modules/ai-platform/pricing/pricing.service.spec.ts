@@ -181,6 +181,22 @@ describe('PricingService option validation', () => {
       .toBeCloseTo((5 * 720 * 720 * 2.5 * 24 / 1024) * 10.7 / 1_000_000 * 1.25);
   });
 
+  it('validates Seedance Omni task-specific inputs and settings', () => {
+    const model = SEEDANCE_VIDEO_MODELS[1];
+    const validate = (options: Record<string, any>) =>
+      (service as any).validateOptions('video', model, {
+        resolution: '720p', duration: 5, aspectRatio: 'adaptive', ...options,
+      });
+    const image = { assetId: 1, type: 'reference_image' };
+    const video = { assetId: 2, type: 'reference_video' };
+    expect(() => validate({ omniTaskType: 'reference', referenceInputs: [image], aspectRatio: '16:9' })).not.toThrow();
+    expect(() => validate({ omniTaskType: 'reference', referenceInputs: [{ assetId: 1, type: 'first_frame' }] })).toThrow(BadRequestException);
+    expect(() => validate({ omniTaskType: 'edit', referenceInputs: [image], duration: -1 })).toThrow(BadRequestException);
+    expect(() => validate({ omniTaskType: 'edit', referenceInputs: [video], duration: -1 })).not.toThrow();
+    expect(() => validate({ omniTaskType: 'edit', referenceInputs: [video], duration: -1, aspectRatio: '16:9' })).toThrow(BadRequestException);
+    expect(() => validate({ omniTaskType: 'extend', referenceInputs: [video] })).not.toThrow();
+  });
+
   it('limits Kling 3.0 prompts to 3072 characters when quoting', async () => {
     const standard = KLING_VIDEO_MODELS[1];
     expect(standard.capabilities.maxPromptCharacters).toBe(3072);

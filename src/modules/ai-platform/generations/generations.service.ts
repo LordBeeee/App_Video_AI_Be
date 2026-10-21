@@ -98,14 +98,21 @@ export class GenerationsService {
       quote.modelSlug,
     );
     const isSeedance = catalogModel.provider === 'seedance';
-    if (isSeedance && JSON.stringify(body.referenceAssetIds || []) !==
+    if (isSeedance && quote.modelSlug !== 'seedance/seedance-2.5-omni' && JSON.stringify(body.referenceAssetIds || []) !==
       JSON.stringify(quote.request?.options?.referenceAssetIds || [])) {
       throw new BadRequestException('Ảnh đã thay đổi, vui lòng lấy báo giá mới');
     }
     const isOmni = quote.modelSlug === 'kling/kling-3.0-omni';
+    const isSeedanceOmni = quote.modelSlug === 'seedance/seedance-2.5-omni';
     const omniInputs: { assetId: number; type: string }[] = isOmni
       ? quote.request?.options?.referenceInputs || []
       : [];
+    const seedanceInputs: { assetId: number; type: string }[] = isSeedanceOmni
+      ? quote.request?.options?.referenceInputs || [] : [];
+    if (isSeedanceOmni && JSON.stringify(body.referenceAssetIds || []) !==
+        JSON.stringify(seedanceInputs.map((input) => input.assetId))) {
+      throw new BadRequestException('Tài nguyên đã thay đổi, vui lòng lấy báo giá mới');
+    }
     if (isOmni && JSON.stringify(body.referenceAssetIds || []) !==
         JSON.stringify(omniInputs.map((input) => input.assetId))) {
       throw new BadRequestException('Tài nguyên đã thay đổi, vui lòng lấy báo giá mới');
@@ -130,24 +137,26 @@ export class GenerationsService {
             Number(catalogModel.capabilities?.input_references?.max) || 0,
           )
         : quote.modality === 'video'
-          ? Number(catalogModel.capabilities?.maxReferenceImages || 0)
+          ? isSeedanceOmni ? 50 : Number(catalogModel.capabilities?.maxReferenceImages || 0)
           : 0;
     const referenceAssetIds = Array.from(
       new Set(
-        (isOmni ? omniInputs.map((input) => input.assetId) : body.referenceAssetIds || [])
+        (isOmni ? omniInputs.map((input) => input.assetId)
+          : isSeedanceOmni ? seedanceInputs.map((input) => input.assetId)
+          : body.referenceAssetIds || [])
           .map(Number)
           .filter((id) => Number.isSafeInteger(id) && id > 0),
       ),
     );
     const referenceUrls = Array.from(
       new Set(
-        (isOmni ? [] : body.referenceUrls || []).filter((url) => typeof url === 'string'),
+        (isOmni || isSeedanceOmni ? [] : body.referenceUrls || []).filter((url) => typeof url === 'string'),
       ),
     );
     const suppliedReferenceCount = referenceAssetIds.length
       ? referenceAssetIds.length
       : referenceUrls.length;
-    if (quote.modality === 'video' && !isOmni && !referenceAssetIds.length) {
+    if (quote.modality === 'video' && !isOmni && !isSeedanceOmni && !referenceAssetIds.length) {
       throw new BadRequestException(
         'Vui lòng tải ảnh lên thư viện trước khi tạo video',
       );
@@ -158,7 +167,7 @@ export class GenerationsService {
       );
     }
     if (
-      quote.modality === 'video' && !isOmni &&
+      quote.modality === 'video' && !isOmni && !isSeedanceOmni &&
       (quote.request?.options?.referenceMode || 'first_frame') ===
         'first_frame' &&
       suppliedReferenceCount > 2
@@ -181,7 +190,43 @@ export class GenerationsService {
     const orderedReferences = referenceAssetIds
       .map((id) => referenceById.get(id))
       .filter((asset): asset is Asset => Boolean(asset));
-    const invalidReference = quote.modality === 'video' &&
+    if (isSeedanceOmni) {
+      let videoSeconds = 0;
+      let audioSeconds = 0;
+      for (const input of seedanceInputs) {
+        const asset = referenceById.get(input.assetId);
+        const seconds = Number((asset?.metadata as Record<string, any>)?.mediaDurationSeconds ?? asset?.durationSeconds);
+        if (!asset || !asset.storedUrl?.startsWith('https://') ||
+          (input.type === 'reference_image' && (asset.assetType !== 'image' ||
+            !['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(asset.mimeType || '') ||
+            (asset.width != null && (asset.width < 300 || asset.width > 6000)) ||
+            (asset.height != null && (asset.height < 300 || asset.height > 6000)) ||
+            (asset.width != null && asset.height != null &&
+              (asset.width / asset.height < 0.4 || asset.width / asset.height > 2.5)))) ||
+          (input.type === 'reference_video' && (asset.assetType !== 'video' ||
+            !['video/mp4', 'video/quicktime'].includes(asset.mimeType || '') ||
+            !Number.isFinite(seconds) || seconds < (quote.request?.options?.omniTaskType === 'edit' ? 4 : 2) || seconds > 30 ||
+            (asset.fileSizeBytes != null && asset.fileSizeBytes > 200_000_000) ||
+            (asset.width != null && (asset.width < 300 || asset.width > 6000)) ||
+            (asset.height != null && (asset.height < 300 || asset.height > 6000)) ||
+            (asset.width != null && asset.height != null &&
+              (asset.width / asset.height < 0.4 || asset.width / asset.height > 2.5 ||
+                asset.width * asset.height < 407696 || asset.width * asset.height > 8295044)) ||
+            (asset.fps != null && (asset.fps < 24 || asset.fps > 60)))) ||
+          (input.type === 'reference_audio' && (asset.assetType !== 'audio' ||
+            !['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav'].includes(asset.mimeType || '') ||
+            !Number.isFinite(seconds) || seconds < 2 || seconds > 30 ||
+            (asset.fileSizeBytes != null && asset.fileSizeBytes > 15_000_000)))) {
+          throw new BadRequestException('Tài nguyên Seedance Omni không đáp ứng yêu cầu của BytePlus');
+        }
+        if (input.type === 'reference_video') videoSeconds += seconds;
+        if (input.type === 'reference_audio') audioSeconds += seconds;
+      }
+      if (videoSeconds > 30 || audioSeconds > 30) {
+        throw new BadRequestException('Tổng thời lượng video hoặc âm thanh tham chiếu vượt 30 giây');
+      }
+    }
+    const invalidReference = quote.modality === 'video' && !isSeedanceOmni &&
       orderedReferences.some((asset) => {
         const type = isOmni
           ? omniInputs.find((input) => input.assetId === Number(asset.id))?.type
@@ -218,7 +263,7 @@ export class GenerationsService {
         `Ảnh hoặc video tham chiếu không đáp ứng yêu cầu của ${isSeedance ? 'Seedance' : 'Kling'}`,
       );
     }
-    if (quote.modality === 'video' && !isOmni && suppliedReferenceCount === 0) {
+    if (quote.modality === 'video' && !isOmni && !isSeedanceOmni && suppliedReferenceCount === 0) {
       throw new BadRequestException('Vui lòng tải ít nhất một ảnh');
     }
     const elementAssetIds: number[] =
@@ -291,6 +336,11 @@ export class GenerationsService {
       url: referenceById.get(input.assetId)!.storedUrl,
       id: `${input.type.endsWith('_video') ? 'video' : 'image'}_${input.assetId}`,
     }));
+    const resolvedSeedanceInputs = seedanceInputs.map((input) => ({
+      type: input.type,
+      url: referenceById.get(input.assetId)!.storedUrl,
+      assetId: input.assetId,
+    }));
     const options = {
       ...(quote.request?.options || {}),
       referenceUrls: orderedReferences.length
@@ -298,6 +348,7 @@ export class GenerationsService {
         : referenceUrls,
       elementIds,
       ...(isOmni ? { referenceInputs: resolvedOmniInputs } : {}),
+      ...(isSeedanceOmni ? { referenceInputs: resolvedSeedanceInputs } : {}),
     };
     let generation = await this.generations.save(
       this.generations.create({
@@ -452,7 +503,7 @@ export class GenerationsService {
     const providerGenerationId = String(
       response.headers['x-generation-id'] || '',
     );
-    const { secureUrl: url } = await this.cloudinary.uploadAudioBuffer(
+    const { secureUrl: url, durationSeconds } = await this.cloudinary.uploadAudioBuffer(
       Buffer.from(response.data),
       `ai-generation/users/${generation.userId}/audio`,
       generation.id,
@@ -464,6 +515,8 @@ export class GenerationsService {
       url,
       {
         generationId: generation.id,
+        durationSeconds,
+        mediaDurationSeconds: durationSeconds,
       },
     );
     const actualUsd = await this.resolveActualCost(
@@ -489,7 +542,9 @@ export class GenerationsService {
   private async createVideo(generation: AiGeneration, model: any) {
     const opts = generation.options || {};
     const job = model.provider === 'seedance'
-      ? await this.seedance.submit(generation.prompt, opts, opts.referenceUrls || [])
+      ? model.id === 'seedance/seedance-2.5-omni'
+        ? await this.seedance.submitOmni(generation.prompt, opts)
+        : await this.seedance.submit(generation.prompt, opts, opts.referenceUrls || [])
       : await this.kling.submit(generation.modelSlug, generation.prompt, opts, opts.referenceUrls || []);
     if (!job.id) throw new BadRequestException('Provider không trả về mã tác vụ');
     generation.status = job.status || 'pending';
@@ -561,6 +616,9 @@ export class GenerationsService {
     const outputAsset = linkedAssets.find(
       (link) => link.role === 'output' && link.asset,
     )?.asset;
+    const lastFrameAsset = linkedAssets.find(
+      (link) => link.role === 'last_frame' && link.asset,
+    )?.asset;
     const displayPriceVnd =
       item.chargedVnd == null
         ? Number(item.estimatedMaxVnd)
@@ -576,6 +634,7 @@ export class GenerationsService {
       options: item.options,
       inputAssets,
       outputUrls: item.outputUrls || [],
+      lastFrameUrl: lastFrameAsset?.storedUrl || null,
       thumbnailUrl:
         outputAsset?.thumbnailUrl ||
         String(

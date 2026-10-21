@@ -23,4 +23,28 @@ export const SEEDANCE_VIDEO_MODELS = [
       perMillionTokens: { '480p': 10.7, '720p': 10.7, '1080p': 11.7 },
     },
   },
+  {
+    id: 'seedance/seedance-2.5-omni',
+    name: 'Seedance: 2.5 Omni',
+    provider: 'seedance',
+    apiModel: 'dreamina-seedance-2-5-260628',
+    modality: 'video',
+    description: 'Tạo, chỉnh sửa hoặc kéo dài video từ ảnh, video và âm thanh tham chiếu.',
+    capabilities: {
+      resolutions: ['480p', '720p', '1080p'],
+      durations: [-1, ...Array.from({ length: 27 }, (_, i) => i + 4)],
+      aspectRatios: ['adaptive', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+      omniTaskTypes: ['reference', 'edit', 'extend'],
+      maxReferenceImages: 30,
+      maxReferenceVideos: 10,
+      maxReferenceAudios: 10,
+      generateAudio: true,
+      maxPromptCharacters: 2500,
+    },
+    pricing: {
+      unitType: 'output_token',
+      source: 'https://docs.byteplus.com/en/docs/modelark/model-pricing',
+      perMillionTokens: { '480p': 10.7, '720p': 10.7, '1080p': 11.7 },
+    },
+  },
 ] as const;

@@ -22,6 +22,9 @@ describe('SeedanceService image-to-video API', () => {
         model: 'dreamina-seedance-2-5-260628',
         ratio: 'adaptive',
         generate_audio: false,
+        watermark: false,
+        draft: false,
+        return_last_frame: true,
         content: [
           { type: 'text', text: 'The camera moves forward' },
           { type: 'image_url', image_url: { url: 'https://example.com/start.png' }, role: 'first_frame' },
@@ -33,11 +36,57 @@ describe('SeedanceService image-to-video API', () => {
 
   it('reads the video URL and actual output tokens', async () => {
     jest.spyOn(axios, 'request').mockResolvedValue({ data: {
-      status: 'succeeded', content: { video_url: 'https://example.com/video.mp4' },
+      status: 'succeeded', content: {
+        video_url: 'https://example.com/video.mp4',
+        last_frame_url: 'https://example.com/last.jpg',
+      },
       usage: { completion_tokens: 108900 },
     } });
     await expect(service.getJob('task-1')).resolves.toMatchObject({
-      status: 'succeeded', url: 'https://example.com/video.mp4', units: 108900,
+      status: 'succeeded', url: 'https://example.com/video.mp4',
+      lastFrameUrl: 'https://example.com/last.jpg', units: 108900,
     });
+  });
+
+  it('submits Omni references with their roles and selected task constraints', async () => {
+    const request = jest.spyOn(axios, 'request').mockResolvedValue({
+      data: { id: 'omni-1', status: 'queued' },
+    });
+    await service.submitOmni('Replace the sky in @video_2 using @image_1 and @audio_3', {
+      omniTaskType: 'edit', duration: -1, resolution: '720p',
+      aspectRatio: 'adaptive', generateAudio: false,
+      referenceInputs: [
+        { assetId: 1, type: 'reference_image', url: 'https://example.com/image.jpg' },
+        { assetId: 2, type: 'reference_video', url: 'https://example.com/video.mp4' },
+        { assetId: 3, type: 'reference_audio', url: 'https://example.com/audio.mp3' },
+      ],
+    });
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        omni_reference_task_type: 'edit', duration: -1, ratio: 'adaptive',
+        watermark: false, draft: false, return_last_frame: true,
+        content: [
+          { type: 'text', text: 'Replace the sky in @Video 1 using @Image 1 and @Audio 1' },
+          { type: 'image_url', image_url: { url: 'https://example.com/image.jpg' }, role: 'reference_image' },
+          { type: 'video_url', video_url: { url: 'https://example.com/video.mp4' }, role: 'reference_video' },
+          { type: 'audio_url', audio_url: { url: 'https://example.com/audio.mp3' }, role: 'reference_audio' },
+        ],
+      }),
+    }));
+  });
+
+  it('allows a chosen ratio for Omni reference generation', async () => {
+    const request = jest.spyOn(axios, 'request').mockResolvedValue({
+      data: { id: 'omni-2', status: 'queued' },
+    });
+    await service.submitOmni('A moving landscape', {
+      omniTaskType: 'reference', duration: 5, resolution: '480p',
+      aspectRatio: '16:9', referenceInputs: [
+        { assetId: 4, type: 'reference_image', url: 'https://example.com/landscape.png' },
+      ],
+    });
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ omni_reference_task_type: 'reference', ratio: '16:9', duration: 5 }),
+    }));
   });
 });

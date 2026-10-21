@@ -21,7 +21,7 @@ export class AiGenerationAsset {
   assetId!: number;
 
   @Column({ length: 30 })
-  role!: 'input' | 'reference' | 'output' | 'thumbnail';
+  role!: 'input' | 'reference' | 'output' | 'thumbnail' | 'last_frame';
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
