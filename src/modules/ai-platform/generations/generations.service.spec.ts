@@ -8,7 +8,7 @@ describe('GenerationsService Seedance quote binding', () => {
     const service = new GenerationsService(
       generations as never, {} as never, {} as never, {} as never,
       {} as never, {} as never, {} as never, {} as never,
-      {} as never, {} as never, {} as never, {} as never, seedance as never,
+      {} as never, {} as never, {} as never, {} as never, seedance as never, {} as never,
     );
     const generation = { prompt: 'Extend @video_1', options: { omniTaskType: 'extend' } };
     await (service as any).createVideo(generation, {
@@ -31,7 +31,7 @@ describe('GenerationsService Seedance quote binding', () => {
       }) } as never,
       { find: jest.fn().mockResolvedValue({ provider: 'seedance' }) } as never,
       wallets as never, {} as never, {} as never, {} as never,
-      {} as never, {} as never, {} as never,
+      {} as never, {} as never, {} as never, {} as never,
     );
     await expect(service.create(7, {
       quoteId: 'quote-1', prompt: 'Camera moves', referenceAssetIds: [2],
@@ -67,6 +67,7 @@ describe('GenerationsService Kling Element validation', () => {
       }),
     } as never,
     wallets as never,
+    {} as never,
     {} as never,
     {} as never,
     {} as never,
@@ -157,7 +158,7 @@ describe('GenerationsService Omni asset checks', () => {
     { find: jest.fn().mockResolvedValue({ capabilities: {
       maxReferenceImages: 7, maxImageMb: 50, maxPromptCharacters: 3072,
     } }) } as never,
-    wallets as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never,
+    wallets as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never,
   );
 
   beforeEach(() => { assets.find.mockReset(); wallets.hold.mockReset(); });

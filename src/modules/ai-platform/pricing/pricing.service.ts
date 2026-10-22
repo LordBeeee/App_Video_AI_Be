@@ -92,6 +92,19 @@ export class PricingService {
       checkImage('seed', 'seed', 'Seed');
     }
     if (modality === 'video') {
+      if (model.provider === 'veo') {
+        const ids = options.referenceAssetIds;
+        if (!Array.isArray(ids) || ids.length < 1 ||
+          ids.length > 2 ||
+          ids.some((id: unknown) => !Number.isSafeInteger(id) || Number(id) < 1) ||
+          new Set(ids).size !== ids.length ||
+          (options.referenceMode && options.referenceMode !== 'first_frame') ||
+          options.referenceInputs || options.elementAssetIds?.length ||
+          options.omniTaskType || options.multiShot || options.customShots ||
+          options.audioMode || options.size || options.seed) {
+          throw new BadRequestException('Ảnh hoặc tùy chọn Veo không hợp lệ');
+        }
+      }
       if (model.provider === 'seedance' && !model.capabilities?.omniTaskTypes) {
         const ids = options.referenceAssetIds;
         if (!Array.isArray(ids) || ids.length < 1 || ids.length > 2 ||
@@ -292,6 +305,11 @@ export class PricingService {
   }
 
   private videoCost(model: any, options: Record<string, any>) {
+    if (model.provider === 'veo') {
+      const rate = model.pricing.perSecond[String(options.resolution || '720p')];
+      return Number(rate?.[options.generateAudio ? 'withAudio' : 'noAudio']) *
+        Number(options.duration || 8);
+    }
     if (model.provider === 'seedance') {
       const resolution = String(options.resolution || '720p');
       const duration = Number(options.duration === -1

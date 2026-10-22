@@ -17,6 +17,7 @@ import { CatalogService } from '../catalog/catalog.service';
 import { PricingService } from '../pricing/pricing.service';
 import { KlingService } from '../kling.service';
 import { SeedanceService } from '../seedance.service';
+import { VeoService } from '../veo.service';
 import { GenerationAssetsService } from './generation-assets.service';
 import { chargeQuoteVnd } from '../pricing/pricing-calculator';
 import { VideoReconciliationService } from './video-reconciliation.service';
@@ -49,6 +50,7 @@ export class GenerationsService {
     private readonly outputAssets: GenerationAssetsService,
     private readonly videoReconciliation: VideoReconciliationService,
     private readonly seedance: SeedanceService,
+    private readonly veo: VeoService,
   ) {}
 
   private chargeVnd(quote: PricingQuote, actualCostUsd?: number) {
@@ -98,8 +100,9 @@ export class GenerationsService {
       quote.modelSlug,
     );
     const isSeedance = catalogModel.provider === 'seedance';
+    const isVeo = catalogModel.provider === 'veo';
     const isSeedanceOmni = isSeedance && !!catalogModel.capabilities?.omniTaskTypes;
-    if (isSeedance && !isSeedanceOmni && JSON.stringify(body.referenceAssetIds || []) !==
+    if ((isSeedance && !isSeedanceOmni || isVeo) && JSON.stringify(body.referenceAssetIds || []) !==
       JSON.stringify(quote.request?.options?.referenceAssetIds || [])) {
       throw new BadRequestException('Ảnh đã thay đổi, vui lòng lấy báo giá mới');
     }
@@ -261,6 +264,7 @@ export class GenerationsService {
           throw new BadRequestException('Ảnh cần có chiều rộng và chiều cao tối thiểu 300 px.');
         }
         return asset.assetType !== 'image' ||
+          (isVeo && !asset.storedUrl?.startsWith('https://res.cloudinary.com/')) ||
           !(isSeedance
             ? ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(asset.mimeType || '')
             : ['image/jpeg', 'image/png'].includes(asset.mimeType || '')) ||
@@ -271,7 +275,7 @@ export class GenerationsService {
       });
     if (invalidReference) {
       throw new BadRequestException(
-        `Ảnh hoặc video tham chiếu không đáp ứng yêu cầu của ${isSeedance ? 'Seedance' : 'Kling'}`,
+        `Ảnh hoặc video tham chiếu không đáp ứng yêu cầu của ${isSeedance ? 'Seedance' : isVeo ? 'Veo' : 'Kling'}`,
       );
     }
     if (quote.modality === 'video' && !isOmni && !isSeedanceOmni && suppliedReferenceCount === 0) {
@@ -369,11 +373,11 @@ export class GenerationsService {
         walletHoldId: hold.id,
         modality: quote.modality,
         modelSlug: quote.modelSlug,
-        source: quote.modality === 'video' ? (isSeedance ? 'seedance' : 'kling') : 'openrouter',
+        source: quote.modality === 'video' ? (isSeedance ? 'seedance' : isVeo ? 'veo' : 'kling') : 'openrouter',
         modelNameSnapshot:
           String(quote.request?.modelName || '') || quote.modelSlug,
         providerSnapshot: {
-          provider: quote.modality === 'video' ? (isSeedance ? 'seedance' : 'kling') : 'openrouter',
+          provider: quote.modality === 'video' ? (isSeedance ? 'seedance' : isVeo ? 'veo' : 'kling') : 'openrouter',
         },
         status: 'processing',
         prompt,
@@ -554,7 +558,9 @@ export class GenerationsService {
 
   private async createVideo(generation: AiGeneration, model: any) {
     const opts = generation.options || {};
-    const job = model.provider === 'seedance'
+    const job = model.provider === 'veo'
+      ? await this.veo.submit(generation.prompt, opts, opts.referenceUrls || [], model.apiModel)
+      : model.provider === 'seedance'
       ? model.capabilities?.omniTaskTypes
         ? await this.seedance.submitOmni(generation.prompt, opts, model.apiModel)
         : await this.seedance.submit(generation.prompt, opts, opts.referenceUrls || [], model.apiModel)

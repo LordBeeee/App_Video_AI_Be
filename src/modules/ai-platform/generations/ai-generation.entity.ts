@@ -35,7 +35,7 @@ export class AiGeneration {
   modelSlug!: string;
 
   @Column({ length: 30, default: 'openrouter' })
-  source!: 'openrouter' | 'kling' | 'seedance' | 'legacy_kling';
+  source!: 'openrouter' | 'kling' | 'seedance' | 'veo' | 'legacy_kling';
 
   @Column({ name: 'model_name_snapshot', length: 255, nullable: true })
   modelNameSnapshot?: string;

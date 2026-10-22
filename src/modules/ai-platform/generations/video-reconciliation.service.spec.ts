@@ -22,6 +22,7 @@ describe('VideoReconciliationService', () => {
       findOneOrFail: jest.fn(() =>
         Promise.resolve({
           maxPriceVnd: 100_000,
+          providerCostMaxUsd: '3.2',
           usdVndRate: 25_000,
           markupRate: 0.2,
           request: { units: { usdPerMillionTokens: 10.7 } },
@@ -36,6 +37,7 @@ describe('VideoReconciliationService', () => {
       getJob: jest.fn(() => Promise.resolve(job)),
       download: jest.fn(() => Promise.resolve(Buffer.from('video'))),
     };
+    const veo = { getJob: jest.fn(() => Promise.resolve(job)) };
     const cloudinary = {
       uploadVideoBuffer: jest.fn(() =>
         Promise.resolve({
@@ -62,9 +64,25 @@ describe('VideoReconciliationService', () => {
       wallets as never,
       {} as never,
       seedance as never,
+      veo as never,
     );
-    return { service, generations, kling, seedance, cloudinary, assets, wallets };
+    return { service, generations, kling, seedance, veo, cloudinary, assets, wallets };
   }
+
+  it('stores a completed Veo video using the existing output and wallet flow', async () => {
+    const { service, veo, cloudinary, assets, wallets } = setup({
+      status: 'succeeded', buffer: Buffer.from('veo-video'),
+    });
+    const item = { ...generation(), source: 'veo', modelSlug: 'google/veo-3.1-fast' } as AiGeneration;
+    await service.reconcile(item);
+    expect(veo.getJob).toHaveBeenCalledWith('job-1', 'veo-3.1-fast-generate-001');
+    expect(cloudinary.uploadVideoBuffer).toHaveBeenCalledWith(
+      Buffer.from('veo-video'), 'ai-generation/users/7/videos', 'generation-1',
+    );
+    expect(assets.saveOutput).toHaveBeenCalledTimes(1);
+    expect(wallets.settle).toHaveBeenCalledTimes(1);
+    expect(item.status).toBe('succeeded');
+  });
 
   it('saves the output and settles no more than the quoted maximum', async () => {
     const { service, assets, wallets } = setup({

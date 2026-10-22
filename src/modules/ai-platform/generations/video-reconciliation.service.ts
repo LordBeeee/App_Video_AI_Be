@@ -12,6 +12,7 @@ import { CloudinaryService } from '../../../common/cloudinary/cloudinary.service
 import { WalletService } from '../../wallet/wallet.service';
 import { KlingService } from '../kling.service';
 import { SeedanceService } from '../seedance.service';
+import { VeoService } from '../veo.service';
 import { chargeQuoteVnd } from '../pricing/pricing-calculator';
 import { PricingQuote } from '../pricing/pricing-quote.entity';
 import { AiGeneration } from './ai-generation.entity';
@@ -36,6 +37,7 @@ export class VideoReconciliationService
     private readonly wallets: WalletService,
     private readonly config: ConfigService,
     private readonly seedance: SeedanceService,
+    private readonly veo: VeoService,
   ) {}
 
   onModuleInit() {
@@ -71,7 +73,7 @@ export class VideoReconciliationService
     }
 
     for (const generation of pending) {
-      if (!['kling', 'seedance'].includes(generation.source)) continue;
+      if (!['kling', 'seedance', 'veo'].includes(generation.source)) continue;
       try {
         await this.reconcile(generation);
       } catch (error) {
@@ -83,22 +85,28 @@ export class VideoReconciliationService
   }
 
   async reconcile(generation: AiGeneration) {
-    if (!['kling', 'seedance'].includes(generation.source) || !generation.externalJobId)
+    if (!['kling', 'seedance', 'veo'].includes(generation.source) || !generation.externalJobId)
       return generation;
     if (this.inProgress.has(generation.id)) return generation;
     this.inProgress.add(generation.id);
     try {
       const isSeedance = generation.source === 'seedance';
-      const job = isSeedance
+      const isVeo = generation.source === 'veo';
+      const job = isVeo
+        ? await this.veo.getJob(generation.externalJobId, generation.modelSlug === 'google/veo-3.1-fast'
+          ? 'veo-3.1-fast-generate-001' : 'veo-3.1-generate-001')
+        : isSeedance
         ? await this.seedance.getJob(generation.externalJobId)
         : await this.kling.getJob(generation.modelSlug, generation.externalJobId);
       const state = job.status;
       if (['completed', 'succeeded', 'succeed'].includes(state)) {
-        if (!job.url)
+        if (!('buffer' in job && job.buffer) && !('url' in job && job.url))
           throw new BadRequestException('Provider chưa trả về URL video');
-        const buffer = isSeedance
-          ? await this.seedance.download(job.url)
-          : await this.kling.download(job.url);
+        const buffer = isVeo && 'buffer' in job && job.buffer
+          ? job.buffer
+          : isSeedance
+          ? await this.seedance.download(job.url!)
+          : await this.kling.download(job.url!);
         const uploaded = await this.cloudinary.uploadVideoBuffer(
           buffer,
           `ai-generation/users/${generation.userId}/videos`,
@@ -143,9 +151,12 @@ export class VideoReconciliationService
           where: { id: generation.quoteId },
         });
         const seedanceRate = Number(quote.request?.units?.usdPerMillionTokens);
-        const actualUsd = isSeedance
-          ? Number.isFinite(job.units) && job.units >= 0 && seedanceRate > 0
-            ? job.units * seedanceRate / 1_000_000 : undefined
+        const units = Number(job.units);
+        const actualUsd = isVeo
+          ? Number(quote.providerCostMaxUsd)
+          : isSeedance
+          ? Number.isFinite(units) && units >= 0 && seedanceRate > 0
+            ? units * seedanceRate / 1_000_000 : undefined
           : typeof job.costUsd === 'number' && Number.isFinite(job.costUsd) && job.costUsd >= 0
             ? job.costUsd : undefined;
         const charge = chargeQuoteVnd(
@@ -156,9 +167,9 @@ export class VideoReconciliationService
         );
         generation.status = 'succeeded';
         generation.outputUrls = [uploaded.secure_url];
-        generation.usage = isSeedance
-          ? { completion_tokens: Number.isFinite(job.units) ? job.units : undefined }
-          : { units: Number.isFinite(job.units) ? job.units : undefined };
+        generation.usage = isVeo ? {} : isSeedance
+          ? { completion_tokens: Number.isFinite(units) ? units : undefined }
+          : { units: Number.isFinite(units) ? units : undefined };
         generation.actualCostUsd =
           actualUsd != null ? String(actualUsd) : undefined;
         generation.chargedVnd = charge;

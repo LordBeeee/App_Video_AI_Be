@@ -12,6 +12,7 @@ import { AiModel } from './ai-model.entity';
 import { OpenRouterService } from '../openrouter.service';
 import { KLING_VIDEO_MODELS } from './kling-video';
 import { SEEDANCE_VIDEO_MODELS } from './seedance-video';
+import { VEO_VIDEO_MODELS } from './veo-video';
 
 export type AiModality = 'image' | 'video' | 'audio' | 'chat';
 
@@ -168,7 +169,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
           endpointsPath: model.endpoints,
         }));
     } else if (modality === 'video') {
-      data = [...KLING_VIDEO_MODELS, ...SEEDANCE_VIDEO_MODELS].map((model) => ({ ...model }));
+      data = [...KLING_VIDEO_MODELS, ...SEEDANCE_VIDEO_MODELS, ...VEO_VIDEO_MODELS].map((model) => ({ ...model }));
     } else {
       const output = modality === 'audio' ? 'speech' : 'text';
       const response = await this.openRouter.listModels(output);

@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { PricingService } from './pricing.service';
 import { KLING_VIDEO_MODELS } from '../catalog/kling-video';
 import { SEEDANCE_VIDEO_MODELS } from '../catalog/seedance-video';
+import { VEO_VIDEO_MODELS } from '../catalog/veo-video';
 
 describe('PricingService option validation', () => {
   const service = new PricingService(
@@ -16,6 +17,15 @@ describe('PricingService option validation', () => {
     capabilities: Record<string, any>,
     options: Record<string, any>,
   ) => (service as any).validateOptions(modality, { capabilities }, options);
+
+  it('limits Veo to a first frame and optional last frame', () => {
+    const model = VEO_VIDEO_MODELS[0];
+    const validateVeo = (options: Record<string, any>) =>
+      (service as any).validateOptions('video', model, options);
+    expect(() => validateVeo({ referenceAssetIds: [1, 2], duration: 6 })).not.toThrow();
+    expect(() => validateVeo({ referenceAssetIds: [1, 2, 3], duration: 8 })).toThrow(BadRequestException);
+    expect(() => validateVeo({ referenceAssetIds: [1], referenceMode: 'refer_image', duration: 8 })).toThrow(BadRequestException);
+  });
 
   it('accepts values inside image enum and range capabilities', () => {
     expect(() =>
