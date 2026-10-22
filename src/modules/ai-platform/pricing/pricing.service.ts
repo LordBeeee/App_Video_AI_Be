@@ -2,11 +2,13 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash } from 'crypto';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
+import { Asset } from '../../assets/entities/asset.entity';
 import { CatalogService, AiModality } from '../catalog/catalog.service';
 import { formatKlingShots } from '../catalog/kling-video';
 import { FxService } from './fx.service';
 import { PricingQuote } from './pricing-quote.entity';
+import { estimateSeedanceTokens, seedanceOutputDimensions } from './seedance-pricing';
 import {
   calculateRetailVnd,
   estimateChatTokens,
@@ -28,6 +30,8 @@ export class PricingService {
     private readonly catalog: CatalogService,
     private readonly fx: FxService,
     private readonly config: ConfigService,
+    @InjectRepository(Asset)
+    private readonly assets: Repository<Asset>,
   ) {}
 
   hashPrompt(prompt = '') {
@@ -310,22 +314,6 @@ export class PricingService {
       return Number(rate?.[options.generateAudio ? 'withAudio' : 'noAudio']) *
         Number(options.duration || 8);
     }
-    if (model.provider === 'seedance') {
-      const resolution = String(options.resolution || '720p');
-      const duration = Number(options.duration === -1
-        ? Math.max(...model.capabilities.durations) : options.duration || 5);
-      const hasVideo = options.referenceInputs?.some((input: any) => input.type === 'reference_video');
-      const inputDuration = hasVideo ? Number(model.capabilities.maxReferenceVideoSeconds || 30) : 0;
-      // BytePlus bills output tokens; reserve above the documented estimate.
-      const shortSide: Record<string, number> = {
-        '480p': 480, '720p': 720, '1080p': 1080, '4k': 2160,
-      };
-      const side = shortSide[resolution];
-      const rate = this.seedanceTokenRate(model, options);
-      if (!side || !Number.isFinite(rate)) return 0;
-      // Input image ratio may reach 2.5:1; reserve for the largest output canvas.
-      return ((duration + inputDuration) * side * side * 2.5 * 24 / 1024) * rate / 1_000_000 * 1.25;
-    }
     if (model.provider === 'kling') {
       const resolution = String(
         options.resolution || model.capabilities.resolutions[0],
@@ -390,6 +378,68 @@ export class PricingService {
     return Number(typeof rate === 'number' ? rate : rate?.[hasVideo ? 'withVideo' : 'withoutVideo']);
   }
 
+  private async seedanceCost(userId: number, model: any, options: Record<string, any>) {
+    const inputs: { assetId: number; type: string }[] = model.capabilities?.omniTaskTypes
+      ? options.referenceInputs || []
+      : (options.referenceAssetIds || []).map((assetId: number) => ({
+          assetId, type: 'reference_image',
+        }));
+    const ids = inputs.map((input) => input.assetId);
+    const assets = await this.assets.find({ where: { id: In(ids), userId } });
+    if (assets.length !== ids.length) {
+      throw new BadRequestException('Tài nguyên tham chiếu không tồn tại hoặc không thuộc tài khoản');
+    }
+    const byId = new Map(assets.map((asset) => [Number(asset.id), asset]));
+    let inputVideoSeconds = 0;
+    let sourceAspectRatio: number | undefined;
+    for (const input of inputs) {
+      const asset = byId.get(input.assetId)!;
+      const type = input.type === 'reference_video' ? 'video'
+        : input.type === 'reference_audio' ? 'audio' : 'image';
+      if (asset.assetType !== type) {
+        throw new BadRequestException('Loại tài nguyên tham chiếu không hợp lệ');
+      }
+      if (type === 'video') {
+        const seconds = Number((asset.metadata as Record<string, any>)?.mediaDurationSeconds ?? asset.durationSeconds);
+        if (!Number.isFinite(seconds) || seconds <= 0) {
+          throw new BadRequestException('Video tham chiếu thiếu thời lượng');
+        }
+        inputVideoSeconds += seconds;
+      }
+      if (!sourceAspectRatio && type !== 'audio' && asset.width && asset.height) {
+        sourceAspectRatio = asset.width / asset.height;
+      }
+    }
+    const resolution = String(options.resolution || '720p');
+    const dimensions = seedanceOutputDimensions(
+      model.apiModel, resolution, String(options.aspectRatio || 'adaptive'), sourceAspectRatio,
+    );
+    const rate = this.seedanceTokenRate(model, options);
+    if (!dimensions || !Number.isFinite(rate) || rate <= 0) {
+      throw new BadRequestException('Không có dữ liệu giá Seedance cho lựa chọn này');
+    }
+    const maxDuration = Math.max(...model.capabilities.durations);
+    const outputSeconds = options.duration === -1
+      ? options.omniTaskType === 'edit' && inputVideoSeconds > 0
+        ? Math.min(maxDuration, Math.ceil(inputVideoSeconds))
+        : maxDuration
+      : Number(options.duration || 5);
+    // BytePlus pricing examples bill 2–4s input videos at the same minimum.
+    // The returned completion_tokens remains authoritative after generation.
+    const billableInputSeconds = inputVideoSeconds > 0
+      ? Math.max(4, inputVideoSeconds) : 0;
+    const estimatedTokens = estimateSeedanceTokens(
+      outputSeconds, billableInputSeconds, dimensions.width, dimensions.height,
+    );
+    return {
+      costUsd: estimatedTokens * rate / 1_000_000,
+      estimatedTokens,
+      inputVideoSeconds,
+      outputSeconds,
+      ...dimensions,
+    };
+  }
+
   private audioCost(model: any, prompt: string) {
     const perCharacter = this.number(
       model.pricing?.prompt || model.pricing?.input || model.pricing?.request,
@@ -443,7 +493,7 @@ export class PricingService {
     let units: Record<string, any> = {};
     if (request.modality === 'image')
       minUsd = maxUsd = this.imageCost(model, options);
-    if (request.modality === 'video')
+    if (request.modality === 'video' && model.provider !== 'seedance')
       minUsd = maxUsd = this.videoCost(model, options);
     if (request.modality === 'video' && model.provider === 'kling') {
       const usdPerUnit = Number(
@@ -456,9 +506,24 @@ export class PricingService {
       };
     }
     if (request.modality === 'video' && model.provider === 'seedance') {
+      const estimate = await this.seedanceCost(userId, model, options);
+      minUsd = estimate.costUsd;
+      const holdBufferRate = Number(this.config.get<string>('SEEDANCE_HOLD_BUFFER_RATE') ?? '0');
+      if (!Number.isFinite(holdBufferRate) || holdBufferRate < 0) {
+        throw new BadRequestException('Mức dự phòng Seedance không hợp lệ');
+      }
+      maxUsd = minUsd * (1 + holdBufferRate);
       units = {
         usdPerMillionTokens: this.seedanceTokenRate(model, options),
         basis: model.pricing.source,
+        estimatedTokens: estimate.estimatedTokens,
+        outputWidth: estimate.width,
+        outputHeight: estimate.height,
+        outputFps: 24,
+        estimatedOutputSeconds: estimate.outputSeconds,
+        inputVideoSeconds: estimate.inputVideoSeconds,
+        aspectRatio: estimate.ratio,
+        holdBufferRate,
       };
     }
     if (request.modality === 'audio')

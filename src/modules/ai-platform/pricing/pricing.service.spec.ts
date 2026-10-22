@@ -3,9 +3,11 @@ import { PricingService } from './pricing.service';
 import { KLING_VIDEO_MODELS } from '../catalog/kling-video';
 import { SEEDANCE_VIDEO_MODELS } from '../catalog/seedance-video';
 import { VEO_VIDEO_MODELS } from '../catalog/veo-video';
+import { seedanceOutputDimensions } from './seedance-pricing';
 
 describe('PricingService option validation', () => {
   const service = new PricingService(
+    {} as never,
     {} as never,
     {} as never,
     {} as never,
@@ -153,6 +155,7 @@ describe('PricingService option validation', () => {
       {} as never,
       {} as never,
       { get: () => '0.14' } as never,
+      {} as never,
     );
     const turbo = KLING_VIDEO_MODELS[0];
     const standard = KLING_VIDEO_MODELS[1];
@@ -187,8 +190,8 @@ describe('PricingService option validation', () => {
     expect(() => (service as any).validateOptions('video', model, {
       duration: 5, resolution: '720p', referenceAssetIds: [1], aspectRatio: '16:9',
     })).toThrow(BadRequestException);
-    expect((service as any).videoCost(model, { duration: 5, resolution: '720p' }))
-      .toBeCloseTo((5 * 720 * 720 * 2.5 * 24 / 1024) * 10.7 / 1_000_000 * 1.25);
+    expect((service as any).seedanceTokenRate(model, { resolution: '720p' }))
+      .toBe(10.7);
   });
 
   it('validates Seedance Omni task-specific inputs and settings', () => {
@@ -231,10 +234,51 @@ describe('PricingService option validation', () => {
     expect((service as any).seedanceTokenRate(omni, { resolution: '720p', referenceInputs: [
       { assetId: 1, type: 'reference_image' },
     ] })).toBe(7);
-    expect((service as any).videoCost(frame, { duration: 5, resolution: '4k' })).toBeGreaterThan(0);
-    expect((service as any).videoCost(omni, { duration: 5, resolution: '720p', referenceInputs: [
-      { assetId: 1, type: 'reference_video' },
-    ] })).toBeCloseTo((20 * 720 * 720 * 2.5 * 24 / 1024) * 4.3 / 1_000_000 * 1.25);
+    expect((service as any).seedanceTokenRate(frame, { resolution: '4k' })).toBe(4);
+  });
+
+  it('quotes a 5s 720p 16:9 Seedance 2.0 video using BytePlus output dimensions', async () => {
+    const model = SEEDANCE_VIDEO_MODELS[0];
+    const pricing = new PricingService(
+      { create: (value: any) => ({ id: 'quote-1', ...value }), save: async () => undefined } as never,
+      { find: async () => model } as never,
+      { getUsdVndRate: async () => ({ rate: 25_000, source: 'test' }) } as never,
+      { get: (key: string) => key === 'AI_MARKUP_RATE' ? '0.05' : undefined } as never,
+      { find: async () => [{ id: 1, assetType: 'image', width: 1280, height: 720 }] } as never,
+    );
+    const quote = await pricing.createQuote(1, {
+      modality: 'video', modelSlug: model.id, prompt: 'test',
+      options: { duration: 5, resolution: '720p', aspectRatio: '16:9', referenceAssetIds: [1] },
+    });
+    expect(quote.details.estimatedTokens).toBe(108_000);
+    expect(quote.providerCostUsd.min).toBeCloseTo(0.756);
+    expect(quote.minPriceVnd).toBe(19_845);
+    expect(quote.maxPriceVnd).toBe(19_845);
+  });
+
+  it('uses the source image ratio for adaptive Seedance quotes', () => {
+    expect(seedanceOutputDimensions('dreamina-seedance-2-0-260128', '720p', 'adaptive', 9 / 16))
+      .toEqual({ width: 720, height: 1280, ratio: '9:16' });
+    expect(seedanceOutputDimensions('dreamina-seedance-2-5-260628', '480p', '16:9'))
+      .toEqual({ width: 854, height: 480, ratio: '16:9' });
+  });
+
+  it('uses actual reference duration and the documented short-video minimum estimate', async () => {
+    const model = SEEDANCE_VIDEO_MODELS[1];
+    const assets = { find: async () => [{
+      id: 1, assetType: 'video', width: 1280, height: 720,
+      durationSeconds: 2, metadata: { mediaDurationSeconds: 2 },
+    }] };
+    const pricing = new PricingService(
+      {} as never, {} as never, {} as never, {} as never, assets as never,
+    );
+    const result = await (pricing as any).seedanceCost(1, model, {
+      duration: 5, resolution: '720p', aspectRatio: '16:9',
+      referenceInputs: [{ assetId: 1, type: 'reference_video' }],
+    });
+    expect(result.inputVideoSeconds).toBe(2);
+    expect(result.estimatedTokens).toBe(194_400);
+    expect(result.costUsd).toBeCloseTo(0.83592);
   });
 
   it('limits Kling 3.0 prompts to 3072 characters when quoting', async () => {
@@ -243,6 +287,7 @@ describe('PricingService option validation', () => {
     const pricing = new PricingService(
       {} as never,
       { find: async () => standard } as never,
+      {} as never,
       {} as never,
       {} as never,
     );
@@ -274,6 +319,7 @@ describe('PricingService option validation', () => {
       {
         get: (key: string) => (key === 'KLING_USD_PER_API_UNIT' ? '0.14' : '0'),
       } as never,
+      {} as never,
     );
 
     await pricing.createQuote(1, {
