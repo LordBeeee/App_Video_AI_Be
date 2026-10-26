@@ -9,6 +9,8 @@ import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'node:crypto';
 import { Repository } from 'typeorm';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
+import { UploadLimitsService } from '../../common/cloudinary/upload-limits.service';
+import { BadRequestException } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { User } from './entities/user.entity';
@@ -19,6 +21,7 @@ export class UserService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly uploadLimits: UploadLimitsService,
   ) {}
 
   findByEmail(email: string) {
@@ -152,6 +155,10 @@ export class UserService {
     await this.ensureUsernameAvailable(dto.username, id);
     let avatarUrl = user.avatarUrl;
     if (avatarBuffer) {
+      const limits = await this.uploadLimits.getLimits();
+      if (avatarBuffer.length > limits.image) {
+        throw new BadRequestException(`Ảnh đại diện không được vượt quá ${limits.image / 1_000_000} MB`);
+      }
       avatarUrl = (
         await this.cloudinaryService.uploadBuffer(
           avatarBuffer,

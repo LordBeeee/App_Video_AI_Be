@@ -597,7 +597,7 @@ export class GenerationsService {
       throw new ForbiddenException();
     if (
       generation.modality === 'video' &&
-      ['pending', 'queued', 'processing', 'running'].includes(generation.status)
+      ['pending', 'submitted', 'queued', 'processing', 'running'].includes(generation.status)
     ) {
       await this.videoReconciliation.reconcile(generation);
       generation = await this.generations.findOneOrFail({

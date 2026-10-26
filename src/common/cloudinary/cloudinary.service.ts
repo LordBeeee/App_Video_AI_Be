@@ -137,7 +137,16 @@ export class CloudinaryService {
     bytes?: number;
   }> {
     return new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
+      const uploadStream = buffer.length > 100_000_000
+        ? cloudinary.uploader.upload_chunked_stream(
+          { folder, public_id: publicId, resource_type: 'video', chunk_size: 20_000_000 },
+          (error, result) => {
+            if (error) return reject(this.uploadError(error));
+            if (!result || (result as any).done === false) return;
+            resolve(this.videoUploadResult(result));
+          },
+        )
+        : cloudinary.uploader.upload_stream(
         {
           folder,
           public_id: publicId,
@@ -145,27 +154,26 @@ export class CloudinaryService {
         },
         (error, result) => {
           if (error) return reject(this.uploadError(error));
-
-          const thumbnailUrl = cloudinary.url(result!.public_id, {
-            resource_type: 'video',
-            format: 'jpg',
-            transformation: [{ start_offset: '0' }], // frame tại giây 0
-          });
-
-          resolve({
-            secure_url: result!.secure_url,
-            public_id: result!.public_id,
-            duration: result!.duration,
-            width: result!.width,
-            height: result!.height,
-            frame_rate: (result as any)!.frame_rate,
-            thumbnail_url: thumbnailUrl,
-            bytes: result!.bytes,
-          });
+          resolve(this.videoUploadResult(result!));
         },
       );
 
       streamifier.createReadStream(buffer).pipe(uploadStream);
     });
+  }
+
+  private videoUploadResult(result: UploadApiResponse) {
+    return {
+      secure_url: result.secure_url,
+      public_id: result.public_id,
+      duration: result.duration,
+      width: result.width,
+      height: result.height,
+      frame_rate: (result as any).frame_rate,
+      thumbnail_url: cloudinary.url(result.public_id, {
+        resource_type: 'video', format: 'jpg', transformation: [{ start_offset: '0' }],
+      }),
+      bytes: result.bytes,
+    };
   }
 }

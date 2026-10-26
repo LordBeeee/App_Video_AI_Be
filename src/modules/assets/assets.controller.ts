@@ -19,11 +19,17 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AssetsService } from './assets.service';
+import { UploadLimitsService } from '../../common/cloudinary/upload-limits.service';
 
 @Controller('assets')
 @UseGuards(JwtAuthGuard)
 export class AssetsController {
-  constructor(private readonly assetsService: AssetsService) {}
+  constructor(private readonly assetsService: AssetsService, private readonly uploadLimits: UploadLimitsService) {}
+
+  @Get('upload-limits')
+  getUploadLimits() {
+    return this.uploadLimits.getLimits();
+  }
 
   @Post('upload')
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))

@@ -1,6 +1,31 @@
 import { BadRequestException } from '@nestjs/common';
 import { GenerationsService } from './generations.service';
 
+describe('GenerationsService video status', () => {
+  it('reconciles a submitted video when the user polls it', async () => {
+    const generation = {
+      id: 'generation-1', userId: 7, modality: 'video', status: 'submitted',
+      linkedAssets: [], outputUrls: [],
+    };
+    const generations = {
+      findOne: jest.fn().mockResolvedValue(generation),
+      findOneOrFail: jest.fn().mockResolvedValue({ ...generation, status: 'succeeded' }),
+    };
+    const videoReconciliation = { reconcile: jest.fn().mockResolvedValue(undefined) };
+    const service = new GenerationsService(
+      generations as never, {} as never, {} as never, {} as never,
+      {} as never, {} as never, {} as never, {} as never,
+      {} as never, {} as never, {} as never, videoReconciliation as never,
+      {} as never, {} as never,
+    );
+
+    const result = await service.findOne(7, generation.id);
+
+    expect(videoReconciliation.reconcile).toHaveBeenCalledWith(generation);
+    expect(result.status).toBe('succeeded');
+  });
+});
+
 describe('GenerationsService Seedance quote binding', () => {
   it('routes Seedance 2.0 Omni through the shared Seedance service', async () => {
     const seedance = { submitOmni: jest.fn().mockResolvedValue({ id: 'task-2', status: 'queued' }) };

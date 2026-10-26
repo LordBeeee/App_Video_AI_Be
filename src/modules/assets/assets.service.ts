@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
+import { UploadLimitsService } from '../../common/cloudinary/upload-limits.service';
 import { AiGenerationAsset } from '../ai-platform/generations/ai-generation-asset.entity';
 import { AiGeneration } from '../ai-platform/generations/ai-generation.entity';
 import { Asset } from './entities/asset.entity';
@@ -15,7 +16,6 @@ const TAB_TO_SOURCE_TYPE: Record<string, string> = {
   creative: 'generated',
   upload: 'uploaded',
 };
-const MAX_IMAGE_UPLOAD_BYTES = 10_000_000;
 
 @Injectable()
 export class AssetsService {
@@ -26,6 +26,7 @@ export class AssetsService {
     @InjectRepository(AiGeneration)
     private readonly generationRepo: Repository<AiGeneration>,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly uploadLimits: UploadLimitsService,
   ) {}
 
   async uploadToLibrary(userId: number, file: Express.Multer.File) {
@@ -35,11 +36,10 @@ export class AssetsService {
     if (!isVideo && !isImage && !isAudio) {
       throw new BadRequestException('Chỉ hỗ trợ upload ảnh, video hoặc audio');
     }
-    if (isImage && file.size > MAX_IMAGE_UPLOAD_BYTES) {
-      throw new BadRequestException('Ảnh tải lên không được vượt quá 10 MB');
-    }
-    if ((isVideo || isAudio) && file.size > 100_000_000) {
-      throw new BadRequestException(`${isAudio ? 'Âm thanh' : 'Video'} tải lên không được vượt quá 100 MB`);
+    const limits = await this.uploadLimits.getLimits();
+    const type = isVideo ? 'video' : isAudio ? 'audio' : 'image';
+    if (file.size > limits[type]) {
+      throw new BadRequestException(`${isVideo ? 'Video' : isAudio ? 'Âm thanh' : 'Ảnh'} tải lên không được vượt quá ${limits[type] / 1_000_000} MB`);
     }
 
     const assetType = isVideo ? 'video' : isAudio ? 'audio' : 'image';

@@ -69,6 +69,38 @@ describe('VideoReconciliationService', () => {
     return { service, generations, kling, seedance, veo, cloudinary, assets, wallets };
   }
 
+  it('includes submitted videos in scheduled reconciliation', async () => {
+    const query = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([]),
+    };
+    const { service, generations } = setup({ status: 'submitted' });
+    (generations as any).createQueryBuilder = jest.fn().mockReturnValue(query);
+
+    await (service as any).reconcilePending();
+
+    expect(query.andWhere).toHaveBeenCalledWith(
+      'generation.status IN (:...statuses)',
+      expect.objectContaining({ statuses: expect.arrayContaining(['submitted']) }),
+    );
+  });
+
+  it('finishes a submitted Kling video when Kling reports succeeded', async () => {
+    const { service, kling, wallets } = setup({
+      status: 'succeeded', url: 'https://provider.example/video.mp4',
+    });
+    const item = { ...generation(), status: 'submitted' } as AiGeneration;
+
+    await service.reconcile(item);
+
+    expect(kling.getJob).toHaveBeenCalledWith(item.modelSlug, item.externalJobId);
+    expect(item.status).toBe('succeeded');
+    expect(wallets.settle).toHaveBeenCalledTimes(1);
+  });
+
   it('stores a completed Veo video using the existing output and wallet flow', async () => {
     const { service, veo, cloudinary, assets, wallets } = setup({
       status: 'succeeded', buffer: Buffer.from('veo-video'),

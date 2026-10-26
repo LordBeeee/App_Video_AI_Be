@@ -60,7 +60,7 @@ export class VideoReconciliationService
         .createQueryBuilder('generation')
         .where('generation.modality = :modality', { modality: 'video' })
         .andWhere('generation.status IN (:...statuses)', {
-          statuses: ['pending', 'queued', 'processing', 'running'],
+          statuses: ['pending', 'submitted', 'queued', 'processing', 'running'],
         })
         .orderBy('generation.updated_at', 'ASC')
         .take(20)
