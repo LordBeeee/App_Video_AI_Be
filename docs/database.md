@@ -16,7 +16,13 @@ current backend has no scenes module or scene table.
 The old `migrations/202610070001_ai_platform.sql` is a one-time upgrade from
 the previous schema. It renames and drops legacy tables, and requires the
 previous application database. **Do not run it on a fresh installation.**
-Back up the database before running it. The separate
+Back up the database before running it.
+`migrations/202610070001_ai_platform_preserve_legacy.sql` performs the same
+upgrade but retains all legacy tables and their rows. Use this variant when
+legacy data must remain available for audit or a later migration; run only one
+of these two files, once, on a database with the old schema. Test it on a
+database branch copied from production before applying it to production.
+The separate
 `migrations/202610160001_reference_assets.sql` updates the source-type check
 for an existing installation when that file is present in the checkout.
 After deploying the Element/Voice API, run

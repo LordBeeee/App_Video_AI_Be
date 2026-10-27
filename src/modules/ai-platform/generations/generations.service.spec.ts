@@ -26,6 +26,43 @@ describe('GenerationsService video status', () => {
   });
 });
 
+describe('GenerationsService video source previews', () => {
+  it('includes Element previews when listing an existing generation', async () => {
+    const generation = {
+      id: 'generation-1', userId: 7, modality: 'video', status: 'succeeded',
+      options: { elementAssetIds: [12] }, prompt: 'A character moves',
+      linkedAssets: [{ role: 'input', asset: {
+        id: 9, assetType: 'video', storedUrl: 'https://example.com/reference.mp4',
+      } }], outputUrls: ['https://example.com/output.mp4'],
+    };
+    const generations = { find: jest.fn().mockResolvedValue([generation]) };
+    const assets = { find: jest.fn().mockResolvedValue([{
+      id: 12, assetType: 'image', storedUrl: 'https://example.com/element.png',
+      thumbnailUrl: 'https://example.com/element-thumb.png',
+      metadata: { name: 'Nhân vật chính' },
+    }]) };
+    const service = new GenerationsService(
+      generations as never, {} as never, {} as never, assets as never,
+      {} as never, {} as never, {} as never, {} as never,
+      {} as never, {} as never, {} as never, {} as never,
+      {} as never, {} as never,
+    );
+
+    const result = await service.list(7, 'video');
+
+    expect(result.items[0].inputAssets).toMatchObject([{
+      id: 9, type: 'video', url: 'https://example.com/reference.mp4',
+    }]);
+    expect(result.items[0].elementAssets).toEqual([{
+      id: 12, type: 'image', url: 'https://example.com/element.png',
+      thumbnailUrl: 'https://example.com/element-thumb.png', name: 'Nhân vật chính',
+    }]);
+    expect(assets.find).toHaveBeenCalledWith({
+      where: { id: expect.any(Object), userId: 7 },
+    });
+  });
+});
+
 describe('GenerationsService Seedance quote binding', () => {
   it('routes Seedance 2.0 Omni through the shared Seedance service', async () => {
     const seedance = { submitOmni: jest.fn().mockResolvedValue({ id: 'task-2', status: 'queued' }) };

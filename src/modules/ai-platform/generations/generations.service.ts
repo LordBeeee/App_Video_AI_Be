@@ -412,7 +412,7 @@ export class GenerationsService {
         where: { id: generation.id },
         relations: { model: true, linkedAssets: { asset: true } },
       });
-      return this.response(hydrated);
+      return this.response(hydrated, elementAssets);
     } catch (error: any) {
       generation.status = 'failed';
       generation.errorMessage = error.message || 'Tạo nội dung thất bại';
@@ -581,8 +581,9 @@ export class GenerationsService {
       order: { createdAt: 'DESC' },
       take: 100,
     });
+    const elements = await this.findElementAssets(items, userId);
     return {
-      items: items.map((item) => this.response(item)),
+      items: items.map((item) => this.response(item, elements)),
       total: items.length,
     };
   }
@@ -605,10 +606,27 @@ export class GenerationsService {
         relations: { model: true, linkedAssets: { asset: true } },
       });
     }
-    return this.response(generation);
+    const elements = await this.findElementAssets([generation], userId);
+    return this.response(generation, elements);
   }
 
-  response(item: AiGeneration) {
+  private elementAssetIds(item: AiGeneration): number[] {
+    const ids = (item.options as Record<string, unknown> | undefined)?.elementAssetIds;
+    return Array.isArray(ids)
+      ? (ids as unknown[]).filter((id): id is number =>
+          typeof id === 'number' && Number.isInteger(id) && id > 0,
+        )
+      : [];
+  }
+
+  private async findElementAssets(items: AiGeneration[], userId: number) {
+    const ids = [...new Set(items.flatMap((item) => this.elementAssetIds(item)))];
+    return ids.length
+      ? this.assets.find({ where: { id: In(ids), userId } })
+      : [];
+  }
+
+  response(item: AiGeneration, elements: Asset[] = []) {
     const linkedAssets = item.linkedAssets || [];
     const linkedInputAssets = linkedAssets
       .filter(
@@ -632,6 +650,20 @@ export class GenerationsService {
             thumbnailUrl: null,
           }),
         );
+    const elementById = new Map(elements.map((asset) => [Number(asset.id), asset]));
+    const elementAssets = this.elementAssetIds(item)
+      .map((id) => elementById.get(id))
+      .filter((asset): asset is Asset => Boolean(asset))
+      .map((asset) => {
+        const name = (asset.metadata as Record<string, unknown> | undefined)?.name;
+        return {
+          id: Number(asset.id),
+          type: asset.assetType,
+          url: asset.storedUrl,
+          thumbnailUrl: asset.thumbnailUrl,
+          name: typeof name === 'string' && name.trim() ? name : `Element #${asset.id}`,
+        };
+      });
     const outputAsset = linkedAssets.find(
       (link) => link.role === 'output' && link.asset,
     )?.asset;
@@ -652,6 +684,7 @@ export class GenerationsService {
       prompt: item.prompt,
       options: item.options,
       inputAssets,
+      elementAssets,
       outputUrls: item.outputUrls || [],
       lastFrameUrl: lastFrameAsset?.storedUrl || null,
       thumbnailUrl:
