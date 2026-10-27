@@ -17,6 +17,7 @@ describe('VideoReconciliationService', () => {
   function setup(job: Record<string, unknown>) {
     const generations = {
       update: jest.fn(() => Promise.resolve({ affected: 1 })),
+      findOne: jest.fn(),
     };
     const quotes = {
       findOneOrFail: jest.fn(() =>
@@ -39,6 +40,7 @@ describe('VideoReconciliationService', () => {
     };
     const veo = { getJob: jest.fn(() => Promise.resolve(job)) };
     const cloudinary = {
+      findVideo: jest.fn(() => Promise.resolve(null)),
       uploadVideoBuffer: jest.fn(() =>
         Promise.resolve({
           secure_url: 'https://example.com/video.mp4',
@@ -50,7 +52,16 @@ describe('VideoReconciliationService', () => {
         Promise.resolve({ secure_url: 'https://example.com/last.jpg', bytes: 234_567 }),
       ),
     };
-    const assets = { saveOutput: jest.fn(() => Promise.resolve(undefined)) };
+    const assets = {
+      findVideoOutput: jest.fn(() => Promise.resolve(null)),
+      saveOutput: jest.fn(() => Promise.resolve({ storedUrl: 'https://example.com/video.mp4' })),
+    };
+    const queryRunner = {
+      connect: jest.fn(() => Promise.resolve()),
+      query: jest.fn((sql: string) => Promise.resolve(sql.includes('try_advisory_lock') ? [{ claimed: true }] : [])),
+      release: jest.fn(() => Promise.resolve()),
+    };
+    const dataSource = { createQueryRunner: jest.fn(() => queryRunner) };
     const wallets = {
       settle: jest.fn(() => Promise.resolve(undefined)),
       release: jest.fn(() => Promise.resolve(undefined)),
@@ -65,8 +76,14 @@ describe('VideoReconciliationService', () => {
       {} as never,
       seedance as never,
       veo as never,
+      dataSource as never,
     );
-    return { service, generations, kling, seedance, veo, cloudinary, assets, wallets };
+    const reconcile = service.reconcile.bind(service);
+    service.reconcile = (item: AiGeneration) => {
+      generations.findOne.mockResolvedValue(item as never);
+      return reconcile(item);
+    };
+    return { service, generations, kling, seedance, veo, cloudinary, assets, wallets, queryRunner };
   }
 
   it('includes submitted videos in scheduled reconciliation', async () => {
@@ -189,6 +206,58 @@ describe('VideoReconciliationService', () => {
     await service.reconcile(item);
     expect(item.status).toBe('succeeded');
     expect(wallets.settle).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses the stored video when a later step fails and reconciliation retries', async () => {
+    const { service, cloudinary, assets, kling, wallets } = setup({
+      status: 'succeeded', url: 'https://provider.example/video.mp4',
+    });
+    const item = generation();
+    const quotes = (service as any).quotes;
+    quotes.findOneOrFail.mockRejectedValueOnce(new Error('temporary database error'));
+
+    await expect(service.reconcile(item)).rejects.toThrow('temporary database error');
+    expect(assets.saveOutput).toHaveBeenCalledTimes(1);
+    assets.findVideoOutput.mockResolvedValueOnce({ storedUrl: 'https://example.com/video.mp4' } as never);
+
+    await service.reconcile(item);
+    expect(assets.saveOutput).toHaveBeenCalledTimes(1);
+    expect(cloudinary.uploadVideoBuffer).toHaveBeenCalledTimes(1);
+    expect(kling.download).toHaveBeenCalledTimes(1);
+    expect(wallets.settle).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers a completed Cloudinary upload after database saving fails', async () => {
+    const { service, cloudinary, assets, kling } = setup({
+      status: 'succeeded', url: 'https://provider.example/video.mp4',
+    });
+    const item = generation();
+    assets.saveOutput.mockRejectedValueOnce(new Error('temporary database error'));
+
+    await expect(service.reconcile(item)).rejects.toThrow('temporary database error');
+    cloudinary.findVideo.mockResolvedValueOnce({
+      secure_url: 'https://example.com/video.mp4', thumbnail_url: 'https://example.com/thumbnail.jpg',
+    } as never);
+    await service.reconcile(item);
+
+    expect(cloudinary.uploadVideoBuffer).toHaveBeenCalledTimes(1);
+    expect(kling.download).toHaveBeenCalledTimes(1);
+    expect(assets.saveOutput).toHaveBeenCalledTimes(2);
+    expect(item.outputUrls).toEqual(['https://example.com/video.mp4']);
+  });
+
+  it('does not process a video claimed by another backend instance', async () => {
+    const { service, queryRunner, kling, cloudinary, assets } = setup({
+      status: 'succeeded', url: 'https://provider.example/video.mp4',
+    });
+    queryRunner.query.mockResolvedValueOnce([{ claimed: false }] as never);
+
+    await service.reconcile(generation());
+
+    expect(kling.getJob).not.toHaveBeenCalled();
+    expect(cloudinary.uploadVideoBuffer).not.toHaveBeenCalled();
+    expect(assets.saveOutput).not.toHaveBeenCalled();
+    expect(queryRunner.release).toHaveBeenCalledTimes(1);
   });
 
   it('settles Seedance using actual completion tokens', async () => {

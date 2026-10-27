@@ -103,7 +103,8 @@ export class AssetsService {
       })
       .andWhere('asset.assetType IN (:...allowedTypes)', {
         allowedTypes: ['image', 'video', 'audio'],
-      });
+      })
+      .andWhere("NOT jsonb_exists(asset.metadata, 'duplicateOf')");
 
     if (opts.type !== 'all') {
       qb.andWhere('asset.assetType = :assetType', { assetType: opts.type });

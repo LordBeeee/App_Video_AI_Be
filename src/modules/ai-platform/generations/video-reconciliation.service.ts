@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { CloudinaryService } from '../../../common/cloudinary/cloudinary.service';
 import { WalletService } from '../../wallet/wallet.service';
 import { KlingService } from '../kling.service';
@@ -38,6 +38,7 @@ export class VideoReconciliationService
     private readonly config: ConfigService,
     private readonly seedance: SeedanceService,
     private readonly veo: VeoService,
+    private readonly dataSource: DataSource,
   ) {}
 
   onModuleInit() {
@@ -89,7 +90,21 @@ export class VideoReconciliationService
       return generation;
     if (this.inProgress.has(generation.id)) return generation;
     this.inProgress.add(generation.id);
+    const lock = this.dataSource.createQueryRunner();
+    let claimed = false;
     try {
+      await lock.connect();
+      const [claim] = await lock.query(
+        'SELECT pg_try_advisory_lock(hashtext($1), hashtext($2)) AS claimed',
+        ['video-generation', generation.id],
+      );
+      claimed = !!claim?.claimed;
+      if (!claimed) return generation;
+      const fresh = await this.generations.findOne({ where: { id: generation.id } });
+      if (!fresh || !['pending', 'submitted', 'queued', 'processing', 'running'].includes(fresh.status))
+        return fresh || generation;
+      generation = fresh;
+      if (!generation.externalJobId) return generation;
       const isSeedance = generation.source === 'seedance';
       const isVeo = generation.source === 'veo';
       const job = isVeo
@@ -102,27 +117,26 @@ export class VideoReconciliationService
       if (['completed', 'succeeded', 'succeed'].includes(state)) {
         if (!('buffer' in job && job.buffer) && !('url' in job && job.url))
           throw new BadRequestException('Provider chưa trả về URL video');
-        const buffer = isVeo && 'buffer' in job && job.buffer
-          ? job.buffer
-          : isSeedance
-          ? await this.seedance.download(job.url!)
-          : await this.kling.download(job.url!);
-        const uploaded = await this.cloudinary.uploadVideoBuffer(
-          buffer,
-          `ai-generation/users/${generation.userId}/videos`,
-          generation.id,
-        );
-        await this.outputAssets.saveOutput(
-          generation.id,
-          generation.userId,
-          'video',
-          uploaded.secure_url,
-          { generationId: generation.id, thumbnailUrl: uploaded.thumbnail_url,
-            fileSizeBytes: uploaded.bytes,
-            durationSeconds: uploaded.duration, mediaDurationSeconds: uploaded.duration,
-            width: uploaded.width,
-            height: uploaded.height, fps: uploaded.frame_rate },
-        );
+        let output = await this.outputAssets.findVideoOutput(generation.id);
+        if (!output) {
+          const folder = `ai-generation/users/${generation.userId}/videos`;
+          let uploaded = await this.cloudinary.findVideo(folder, generation.id);
+          if (!uploaded) {
+            const buffer = isVeo && 'buffer' in job && job.buffer
+              ? job.buffer
+              : isSeedance
+              ? await this.seedance.download(job.url!)
+              : await this.kling.download(job.url!);
+            uploaded = await this.cloudinary.uploadVideoBuffer(buffer, folder, generation.id);
+          }
+          output = await this.outputAssets.saveOutput(
+            generation.id, generation.userId, 'video', uploaded.secure_url,
+            { generationId: generation.id, thumbnailUrl: uploaded.thumbnail_url,
+              fileSizeBytes: uploaded.bytes, durationSeconds: uploaded.duration,
+              mediaDurationSeconds: uploaded.duration, width: uploaded.width,
+              height: uploaded.height, fps: uploaded.frame_rate },
+          );
+        }
         const lastFrameUrl = 'lastFrameUrl' in job && typeof job.lastFrameUrl === 'string'
           ? job.lastFrameUrl : undefined;
         if (isSeedance && lastFrameUrl) {
@@ -166,7 +180,7 @@ export class VideoReconciliationService
           actualUsd,
         );
         generation.status = 'succeeded';
-        generation.outputUrls = [uploaded.secure_url];
+        generation.outputUrls = [output.storedUrl];
         generation.usage = isVeo ? {} : isSeedance
           ? { completion_tokens: Number.isFinite(units) ? units : undefined }
           : { units: Number.isFinite(units) ? units : undefined };
@@ -213,7 +227,13 @@ export class VideoReconciliationService
       }
       return generation;
     } finally {
-      this.inProgress.delete(generation.id);
+      try {
+        if (claimed) await lock.query('SELECT pg_advisory_unlock(hashtext($1), hashtext($2))',
+          ['video-generation', generation.id]);
+      } finally {
+        await lock.release();
+        this.inProgress.delete(generation.id);
+      }
     }
   }
 }

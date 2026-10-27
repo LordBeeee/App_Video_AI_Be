@@ -162,6 +162,21 @@ export class CloudinaryService {
     });
   }
 
+  async findVideo(
+    folder: string,
+    publicId: string,
+  ): Promise<Awaited<ReturnType<CloudinaryService['uploadVideoBuffer']>> | null> {
+    try {
+      const result = await cloudinary.api.resource(`${folder}/${publicId}`, {
+        resource_type: 'video',
+      });
+      return this.videoUploadResult(result);
+    } catch (error) {
+      if ((error as { http_code?: number })?.http_code === 404) return null;
+      throw this.uploadError(error as { message?: string });
+    }
+  }
+
   private videoUploadResult(result: UploadApiResponse) {
     return {
       secure_url: result.secure_url,

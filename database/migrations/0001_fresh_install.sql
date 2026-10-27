@@ -203,6 +203,11 @@ CREATE TABLE ai_generation_assets (
   UNIQUE (generation_id, asset_id, role)
 );
 CREATE INDEX idx_ai_generation_assets_asset ON ai_generation_assets(asset_id);
+CREATE UNIQUE INDEX uq_assets_generated_video_generation
+  ON assets ((metadata->>'generationId'))
+  WHERE asset_type = 'video' AND asset_role = 'output'
+    AND source_type = 'generated' AND jsonb_exists(metadata, 'generationId')
+    AND NOT jsonb_exists(metadata, 'duplicateOf');
 
 CREATE TABLE conversations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
