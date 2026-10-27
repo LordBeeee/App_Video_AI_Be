@@ -16,7 +16,7 @@ describe('VideoReconciliationService', () => {
 
   function setup(job: Record<string, unknown>) {
     const generations = {
-      save: jest.fn((value: AiGeneration) => Promise.resolve(value)),
+      update: jest.fn(() => Promise.resolve({ affected: 1 })),
     };
     const quotes = {
       findOneOrFail: jest.fn(() =>
@@ -117,13 +117,14 @@ describe('VideoReconciliationService', () => {
   });
 
   it('saves the output and settles no more than the quoted maximum', async () => {
-    const { service, assets, wallets } = setup({
+    const { service, generations, assets, wallets } = setup({
       status: 'succeeded',
       url: 'https://provider.example/video.mp4',
       costUsd: 5,
       units: 10,
     });
     const item = generation();
+    item.linkedAssets = [{ id: 'existing-link' }] as AiGeneration['linkedAssets'];
 
     await service.reconcile(item);
 
@@ -134,6 +135,14 @@ describe('VideoReconciliationService', () => {
       'generation-1', 7, 'video', 'https://example.com/video.mp4',
       expect.objectContaining({ fileSizeBytes: 12_345_678 }),
     );
+    expect(generations.update).toHaveBeenCalledWith('generation-1', {
+      status: 'succeeded',
+      outputUrls: ['https://example.com/video.mp4'],
+      usage: { units: 10 },
+      actualCostUsd: '5',
+      chargedVnd: 100_000,
+      completedAt: expect.any(Date),
+    });
     expect(wallets.settle).toHaveBeenCalledWith('hold-1', 100_000, {
       generationId: 'generation-1',
       modality: 'video',
@@ -142,7 +151,7 @@ describe('VideoReconciliationService', () => {
   });
 
   it('releases the wallet hold when Kling fails', async () => {
-    const { service, assets, wallets } = setup({
+    const { service, generations, assets, wallets } = setup({
       status: 'failed',
       error: 'Provider rejected the job',
     });
@@ -152,6 +161,11 @@ describe('VideoReconciliationService', () => {
 
     expect(item.status).toBe('failed');
     expect(item.errorMessage).toBe('Provider rejected the job');
+    expect(generations.update).toHaveBeenCalledWith('generation-1', {
+      status: 'failed',
+      errorMessage: 'Provider rejected the job',
+      completedAt: expect.any(Date),
+    });
     expect(assets.saveOutput).not.toHaveBeenCalled();
     expect(wallets.release).toHaveBeenCalledWith(
       'hold-1',

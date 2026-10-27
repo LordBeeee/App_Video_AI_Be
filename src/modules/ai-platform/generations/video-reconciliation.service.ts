@@ -174,7 +174,14 @@ export class VideoReconciliationService
           actualUsd != null ? String(actualUsd) : undefined;
         generation.chargedVnd = charge;
         generation.completedAt = new Date();
-        await this.generations.save(generation);
+        await this.generations.update(generation.id, {
+          status: generation.status,
+          outputUrls: generation.outputUrls,
+          usage: generation.usage,
+          actualCostUsd: generation.actualCostUsd,
+          chargedVnd: generation.chargedVnd,
+          completedAt: generation.completedAt,
+        });
         await this.wallets.settle(generation.walletHoldId!, charge, {
           generationId: generation.id,
           modality: 'video',
@@ -189,14 +196,20 @@ export class VideoReconciliationService
               ? String(jobError.message)
               : `Video ${state}`;
         generation.completedAt = new Date();
-        await this.generations.save(generation);
+        await this.generations.update(generation.id, {
+          status: generation.status,
+          errorMessage: generation.errorMessage,
+          completedAt: generation.completedAt,
+        });
         await this.wallets.release(
           generation.walletHoldId!,
           generation.errorMessage || `Video ${state}`,
         );
       } else {
         generation.status = state || generation.status;
-        await this.generations.save(generation);
+        await this.generations.update(generation.id, {
+          status: generation.status,
+        });
       }
       return generation;
     } finally {
