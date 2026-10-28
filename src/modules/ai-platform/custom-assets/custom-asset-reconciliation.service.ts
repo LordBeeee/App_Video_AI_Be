@@ -38,7 +38,7 @@ export class CustomAssetReconciliationService implements OnModuleInit, OnModuleD
         .andWhere("asset.asset_role IN ('voice', 'element')")
         .andWhere("(asset.metadata->>'deleteStatus' IN ('submitted', 'processing') OR (asset.metadata->>'status' IN ('submitted', 'processing') AND asset.metadata->>'deleteStatus' IS NULL))")
         .andWhere("(asset.metadata->>'nextCheckAt' IS NULL OR asset.metadata->>'nextCheckAt' <= :now)", { now: new Date().toISOString() })
-        .orderBy('asset.updated_at', 'ASC')
+        .orderBy('asset.created_at', 'ASC')
         .take(20)
         .getMany();
       for (const asset of pending) {
