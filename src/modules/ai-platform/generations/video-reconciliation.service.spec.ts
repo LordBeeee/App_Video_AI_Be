@@ -103,6 +103,10 @@ describe('VideoReconciliationService', () => {
       'generation.status IN (:...statuses)',
       expect.objectContaining({ statuses: expect.arrayContaining(['submitted']) }),
     );
+    expect(query.andWhere).toHaveBeenCalledWith(
+      '(generation.next_check_at IS NULL OR generation.next_check_at <= :now)',
+      expect.objectContaining({ now: expect.any(Date) }),
+    );
   });
 
   it('finishes a submitted Kling video when Kling reports succeeded', async () => {
@@ -159,6 +163,7 @@ describe('VideoReconciliationService', () => {
       actualCostUsd: '5',
       chargedVnd: 100_000,
       completedAt: expect.any(Date),
+      nextCheckAt: null,
     });
     expect(wallets.settle).toHaveBeenCalledWith('hold-1', 100_000, {
       generationId: 'generation-1',
@@ -182,6 +187,7 @@ describe('VideoReconciliationService', () => {
       status: 'failed',
       errorMessage: 'Provider rejected the job',
       completedAt: expect.any(Date),
+      nextCheckAt: null,
     });
     expect(assets.saveOutput).not.toHaveBeenCalled();
     expect(wallets.release).toHaveBeenCalledWith(

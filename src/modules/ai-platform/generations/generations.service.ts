@@ -568,6 +568,7 @@ export class GenerationsService {
     if (!job.id) throw new BadRequestException('Provider không trả về mã tác vụ');
     generation.status = job.status || 'pending';
     generation.externalJobId = job.id;
+    generation.nextCheckAt = new Date(Date.now() + 15_000);
     await this.generations.save(generation);
     return generation;
   }
@@ -589,23 +590,13 @@ export class GenerationsService {
   }
 
   async findOne(userId: number, id: string) {
-    let generation = await this.generations.findOne({
+    const generation = await this.generations.findOne({
       where: { id },
       relations: { model: true, linkedAssets: { asset: true } },
     });
     if (!generation) throw new NotFoundException('Không tìm thấy generation');
     if (Number(generation.userId) !== Number(userId))
       throw new ForbiddenException();
-    if (
-      generation.modality === 'video' &&
-      ['pending', 'submitted', 'queued', 'processing', 'running'].includes(generation.status)
-    ) {
-      await this.videoReconciliation.reconcile(generation);
-      generation = await this.generations.findOneOrFail({
-        where: { id },
-        relations: { model: true, linkedAssets: { asset: true } },
-      });
-    }
     const elements = await this.findElementAssets([generation], userId);
     return this.response(generation, elements);
   }

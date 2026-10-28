@@ -171,10 +171,13 @@ CREATE TABLE ai_generations (
   charged_vnd BIGINT,
   error_message TEXT,
   completed_at TIMESTAMPTZ,
+  next_check_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_ai_generations_user_created ON ai_generations(user_id, created_at DESC);
+CREATE INDEX idx_ai_generations_video_next_check ON ai_generations(next_check_at, created_at)
+  WHERE modality = 'video' AND status IN ('pending', 'submitted', 'queued', 'processing', 'running');
 CREATE UNIQUE INDEX idx_ai_generations_external_job ON ai_generations(external_job_id)
   WHERE external_job_id IS NOT NULL;
 

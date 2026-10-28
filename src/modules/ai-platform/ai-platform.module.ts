@@ -29,6 +29,7 @@ import {
 } from './custom-assets/custom-assets.controller';
 import { GenerationAssetsService } from './generations/generation-assets.service';
 import { VideoReconciliationService } from './generations/video-reconciliation.service';
+import { CustomAssetReconciliationService } from './custom-assets/custom-asset-reconciliation.service';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { VideoReconciliationService } from './generations/video-reconciliation.s
     GenerationsService,
     GenerationAssetsService,
     VideoReconciliationService,
+    CustomAssetReconciliationService,
     ChatService,
   ],
 })

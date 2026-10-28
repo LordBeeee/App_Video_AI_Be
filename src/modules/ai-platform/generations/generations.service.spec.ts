@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { GenerationsService } from './generations.service';
 
 describe('GenerationsService video status', () => {
-  it('reconciles a submitted video when the user polls it', async () => {
+  it('reads a submitted video without calling the provider', async () => {
     const generation = {
       id: 'generation-1', userId: 7, modality: 'video', status: 'submitted',
       linkedAssets: [], outputUrls: [],
@@ -11,7 +11,7 @@ describe('GenerationsService video status', () => {
       findOne: jest.fn().mockResolvedValue(generation),
       findOneOrFail: jest.fn().mockResolvedValue({ ...generation, status: 'succeeded' }),
     };
-    const videoReconciliation = { reconcile: jest.fn().mockResolvedValue(undefined) };
+    const videoReconciliation = { reconcile: jest.fn() };
     const service = new GenerationsService(
       generations as never, {} as never, {} as never, {} as never,
       {} as never, {} as never, {} as never, {} as never,
@@ -21,8 +21,8 @@ describe('GenerationsService video status', () => {
 
     const result = await service.findOne(7, generation.id);
 
-    expect(videoReconciliation.reconcile).toHaveBeenCalledWith(generation);
-    expect(result.status).toBe('succeeded');
+    expect(videoReconciliation.reconcile).not.toHaveBeenCalled();
+    expect(result.status).toBe('submitted');
   });
 });
 

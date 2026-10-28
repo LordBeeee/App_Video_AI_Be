@@ -63,7 +63,8 @@ export class VideoReconciliationService
         .andWhere('generation.status IN (:...statuses)', {
           statuses: ['pending', 'submitted', 'queued', 'processing', 'running'],
         })
-        .orderBy('generation.updated_at', 'ASC')
+        .andWhere('(generation.next_check_at IS NULL OR generation.next_check_at <= :now)', { now: new Date() })
+        .orderBy('generation.next_check_at', 'ASC', 'NULLS FIRST')
         .take(20)
         .getMany();
     } catch (error) {
@@ -81,6 +82,9 @@ export class VideoReconciliationService
         this.logger.warn(
           `Không thể đối soát video ${generation.id}: ${error instanceof Error ? error.message : String(error)}`,
         );
+        await this.generations.update(generation.id, {
+          nextCheckAt: new Date(Date.now() + 120_000),
+        }).catch(() => undefined);
       }
     }
   }
@@ -188,6 +192,7 @@ export class VideoReconciliationService
           actualUsd != null ? String(actualUsd) : undefined;
         generation.chargedVnd = charge;
         generation.completedAt = new Date();
+        generation.nextCheckAt = null;
         await this.generations.update(generation.id, {
           status: generation.status,
           outputUrls: generation.outputUrls,
@@ -195,6 +200,7 @@ export class VideoReconciliationService
           actualCostUsd: generation.actualCostUsd,
           chargedVnd: generation.chargedVnd,
           completedAt: generation.completedAt,
+          nextCheckAt: null,
         });
         await this.wallets.settle(generation.walletHoldId!, charge, {
           generationId: generation.id,
@@ -210,10 +216,12 @@ export class VideoReconciliationService
               ? String(jobError.message)
               : `Video ${state}`;
         generation.completedAt = new Date();
+        generation.nextCheckAt = null;
         await this.generations.update(generation.id, {
           status: generation.status,
           errorMessage: generation.errorMessage,
           completedAt: generation.completedAt,
+          nextCheckAt: null,
         });
         await this.wallets.release(
           generation.walletHoldId!,
@@ -221,8 +229,12 @@ export class VideoReconciliationService
         );
       } else {
         generation.status = state || generation.status;
+        const ageMs = Date.now() - new Date(generation.createdAt || Date.now()).getTime();
+        const delayMs = ageMs < 120_000 ? 30_000 : ageMs < 600_000 ? 60_000 : 120_000;
+        generation.nextCheckAt = new Date(Date.now() + delayMs);
         await this.generations.update(generation.id, {
           status: generation.status,
+          nextCheckAt: generation.nextCheckAt,
         });
       }
       return generation;

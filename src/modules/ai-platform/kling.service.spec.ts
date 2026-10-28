@@ -420,6 +420,7 @@ describe('Kling element creation', () => {
         },
       },
     });
+    await service.reconcileCustomAsset(voice as never);
     const result = await service.listCustomAssets(7, 'voice');
     expect(result.items[0].metadata).toMatchObject({
       status: 'succeed',
@@ -565,6 +566,7 @@ describe('Kling element creation', () => {
       },
     });
 
+    await service.reconcileCustomAsset(asset as never);
     const result = await service.listCustomAssets(7, 'voice');
 
     expect(result.items).toEqual([asset]);
@@ -589,6 +591,7 @@ describe('Kling element creation', () => {
       data: { code: 0, data: { task_status: 'succeed' } },
     });
 
+    await service.reconcileCustomAsset(asset as never);
     const result = await service.listCustomAssets(7, 'element');
 
     expect(request.mock.calls[0][0].url).toContain(

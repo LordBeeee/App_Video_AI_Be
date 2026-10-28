@@ -295,68 +295,41 @@ export class KlingService {
       },
       order: { createdAt: 'DESC' },
     });
-    for (const asset of assets) {
-      const meta = asset.metadata as Record<string, any>;
-      if (meta?.deleteStatus === 'submitting') continue;
-      if (
-        meta?.deleteStatus === 'submitted' ||
-        meta?.deleteStatus === 'processing'
-      ) {
-        try {
-          const path =
-            asset.assetRole === 'voice'
-              ? 'custom-voices'
-              : 'advanced-custom-elements';
-          const task = await this.request(
-            'GET',
-            `/v1/general/${path}/${encodeURIComponent(meta.deleteTaskId)}`,
-          );
-          meta.deleteStatus = task?.task_status || meta.deleteStatus;
-          meta.deleteError =
-            task?.task_status === 'failed'
-              ? task?.task_status_msg || 'Kling không xóa được tài nguyên'
-              : null;
-          asset.metadata = meta;
-          await this.assetRepo.save(asset);
-        } catch {
-          /* Keep the pending deletion visible for a later status check. */
-        }
-        continue;
-      }
-      if (meta?.deleteStatus === 'succeed') continue;
-      if (!meta?.taskId || !['submitted', 'processing'].includes(meta.status))
-        continue;
-      try {
-        const path =
-          asset.assetRole === 'voice'
-            ? 'custom-voices'
-            : 'advanced-custom-elements';
-        const task = await this.request(
-          'GET',
-          `/v1/general/${path}/${encodeURIComponent(meta.taskId)}`,
-        );
-        meta.status = task?.task_status || meta.status;
-        meta.error = task?.task_status_msg || null;
-        if (asset.assetRole === 'voice') {
-          meta.voiceId =
-            task?.task_result?.voices?.[0]?.voice_id || meta.voiceId || null;
-          meta.trialUrl =
-            task?.task_result?.voices?.[0]?.trial_url || meta.trialUrl || null;
-        } else {
-          meta.elementId = task?.task_result?.elements?.[0]?.element_id || null;
-        }
-        asset.metadata = meta;
-        await this.assetRepo.save(asset);
-      } catch {
-        /* Keep the saved task visible if Kling is temporarily unavailable. */
-      }
-    }
     return {
       items: assets.filter(
         (asset) =>
           (asset.metadata as Record<string, any>)?.deleteStatus !== 'succeed',
       ),
     };
+  }
+
+  async reconcileCustomAsset(asset: Asset) {
+    const meta = { ...(asset.metadata as Record<string, any>) };
+    const deleting = ['submitted', 'processing'].includes(meta.deleteStatus);
+    if (meta.deleteStatus === 'submitting' || meta.deleteStatus === 'succeed') return;
+    if (!deleting && !['submitted', 'processing'].includes(meta.status)) return;
+    const taskId = deleting ? meta.deleteTaskId : meta.taskId;
+    if (!taskId) return;
+    const path = asset.assetRole === 'voice' ? 'custom-voices' : 'advanced-custom-elements';
+    const task = await this.request('GET', `/v1/general/${path}/${encodeURIComponent(taskId)}`);
+    if (deleting) {
+      meta.deleteStatus = task?.task_status || meta.deleteStatus;
+      meta.deleteError = task?.task_status === 'failed'
+        ? task?.task_status_msg || 'Kling không xóa được tài nguyên' : null;
+    } else {
+      meta.status = task?.task_status || meta.status;
+      meta.error = task?.task_status_msg || null;
+      if (asset.assetRole === 'voice') {
+        meta.voiceId = task?.task_result?.voices?.[0]?.voice_id || meta.voiceId || null;
+        meta.trialUrl = task?.task_result?.voices?.[0]?.trial_url || meta.trialUrl || null;
+      } else {
+        meta.elementId = task?.task_result?.elements?.[0]?.element_id || meta.elementId || null;
+      }
+    }
+    if (JSON.stringify(meta) !== JSON.stringify(asset.metadata)) {
+      asset.metadata = meta;
+      await this.assetRepo.save(asset);
+    }
   }
 
   async deleteCustomAsset(

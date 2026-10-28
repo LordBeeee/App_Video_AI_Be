@@ -88,6 +88,9 @@ export class AiGeneration {
   @Column({ name: 'completed_at', type: 'timestamptz', nullable: true })
   completedAt?: Date;
 
+  @Column({ name: 'next_check_at', type: 'timestamptz', nullable: true })
+  nextCheckAt?: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
 
