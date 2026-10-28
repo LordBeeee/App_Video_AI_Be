@@ -172,6 +172,11 @@ CREATE TABLE ai_generations (
   error_message TEXT,
   completed_at TIMESTAMPTZ,
   next_check_at TIMESTAMPTZ,
+  provider_status VARCHAR(30),
+  processing_stage VARCHAR(40),
+  sync_error_code VARCHAR(50),
+  sync_error_message TEXT,
+  last_sync_attempt_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

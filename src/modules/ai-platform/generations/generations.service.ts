@@ -566,7 +566,10 @@ export class GenerationsService {
         : await this.seedance.submit(generation.prompt, opts, opts.referenceUrls || [], model.apiModel)
       : await this.kling.submit(generation.modelSlug, generation.prompt, opts, opts.referenceUrls || []);
     if (!job.id) throw new BadRequestException('Provider không trả về mã tác vụ');
-    generation.status = job.status || 'pending';
+    generation.status = ['succeeded', 'succeed', 'completed', 'failed', 'cancelled', 'expired'].includes(job.status)
+      ? 'processing' : job.status || 'pending';
+    generation.providerStatus = job.status || 'submitted';
+    generation.processingStage = 'checking_provider';
     generation.externalJobId = job.id;
     generation.nextCheckAt = new Date(Date.now() + 15_000);
     await this.generations.save(generation);
@@ -672,6 +675,11 @@ export class GenerationsService {
       modelName: item.modelNameSnapshot || item.model?.name || item.modelSlug,
       source: item.source,
       status: item.status,
+      providerStatus: item.providerStatus,
+      processingStage: item.processingStage,
+      syncErrorCode: item.syncErrorCode,
+      syncErrorMessage: item.syncErrorMessage,
+      lastSyncAttemptAt: item.lastSyncAttemptAt,
       prompt: item.prompt,
       options: item.options,
       inputAssets,

@@ -156,7 +156,7 @@ describe('VideoReconciliationService', () => {
       'generation-1', 7, 'video', 'https://example.com/video.mp4',
       expect.objectContaining({ fileSizeBytes: 12_345_678 }),
     );
-    expect(generations.update).toHaveBeenCalledWith('generation-1', {
+    expect(generations.update).toHaveBeenCalledWith('generation-1', expect.objectContaining({
       status: 'succeeded',
       outputUrls: ['https://example.com/video.mp4'],
       usage: { units: 10 },
@@ -164,7 +164,9 @@ describe('VideoReconciliationService', () => {
       chargedVnd: 100_000,
       completedAt: expect.any(Date),
       nextCheckAt: null,
-    });
+      providerStatus: 'succeeded',
+      syncErrorCode: null,
+    }));
     expect(wallets.settle).toHaveBeenCalledWith('hold-1', 100_000, {
       generationId: 'generation-1',
       modality: 'video',
@@ -183,12 +185,13 @@ describe('VideoReconciliationService', () => {
 
     expect(item.status).toBe('failed');
     expect(item.errorMessage).toBe('Provider rejected the job');
-    expect(generations.update).toHaveBeenCalledWith('generation-1', {
+    expect(generations.update).toHaveBeenCalledWith('generation-1', expect.objectContaining({
       status: 'failed',
       errorMessage: 'Provider rejected the job',
       completedAt: expect.any(Date),
       nextCheckAt: null,
-    });
+      providerStatus: 'failed',
+    }));
     expect(assets.saveOutput).not.toHaveBeenCalled();
     expect(wallets.release).toHaveBeenCalledWith(
       'hold-1',
@@ -198,20 +201,59 @@ describe('VideoReconciliationService', () => {
   });
 
   it('keeps the job pending and retries when saving to Cloudinary fails temporarily', async () => {
-    const { service, cloudinary, assets, wallets } = setup({
+    const { service, generations, cloudinary, assets, wallets } = setup({
       status: 'succeeded', url: 'https://provider.example/video.mp4',
     });
     const item = generation();
-    cloudinary.uploadVideoBuffer.mockRejectedValueOnce(new Error('Cloudinary: upload timed out'));
-    await expect(service.reconcile(item)).rejects.toThrow('Cloudinary: upload timed out');
+    cloudinary.uploadVideoBuffer.mockRejectedValueOnce(new Error('Cloudinary: storage quota exceeded'));
+    await expect(service.reconcile(item)).rejects.toThrow('Cloudinary: storage quota exceeded');
     expect(item.status).toBe('processing');
+    expect(generations.update).toHaveBeenCalledWith('generation-1', expect.objectContaining({
+      processingStage: 'uploading_cloudinary',
+      syncErrorCode: 'CLOUDINARY_QUOTA_EXCEEDED',
+      syncErrorMessage: expect.stringContaining('vượt hạn mức'),
+      nextCheckAt: expect.any(Date),
+    }));
     expect(assets.saveOutput).not.toHaveBeenCalled();
     expect(wallets.release).not.toHaveBeenCalled();
     expect(wallets.settle).not.toHaveBeenCalled();
 
     await service.reconcile(item);
     expect(item.status).toBe('succeeded');
+    expect(generations.update).toHaveBeenCalledWith('generation-1', expect.objectContaining({
+      status: 'succeeded', syncErrorCode: null, syncErrorMessage: null,
+    }));
     expect(wallets.settle).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries wallet settlement before marking a saved video successful', async () => {
+    const { service, generations, assets, wallets } = setup({
+      status: 'succeeded', url: 'https://provider.example/video.mp4',
+    });
+    const item = generation();
+    wallets.settle.mockRejectedValueOnce(new Error('temporary wallet error'));
+    await expect(service.reconcile(item)).rejects.toThrow('temporary wallet error');
+    expect(generations.update).toHaveBeenCalledWith('generation-1', expect.objectContaining({
+      processingStage: 'settling_wallet', syncErrorCode: 'WALLET_SETTLEMENT_FAILED',
+    }));
+    expect(generations.update).not.toHaveBeenCalledWith('generation-1', expect.objectContaining({ status: 'succeeded' }));
+    assets.findVideoOutput.mockResolvedValueOnce({ storedUrl: 'https://example.com/video.mp4' } as never);
+    await service.reconcile(item);
+    expect(wallets.settle).toHaveBeenCalledTimes(2);
+    expect(item.status).toBe('succeeded');
+  });
+
+  it('reports Cloudinary account rejection during storage lookup', async () => {
+    const { service, generations, cloudinary } = setup({
+      status: 'succeeded', url: 'https://provider.example/video.mp4',
+    });
+    cloudinary.findVideo.mockRejectedValueOnce(new Error('Cloudinary: 403 Forbidden'));
+    await expect(service.reconcile(generation())).rejects.toThrow('Cloudinary: 403 Forbidden');
+    expect(generations.update).toHaveBeenCalledWith('generation-1', expect.objectContaining({
+      processingStage: 'checking_storage',
+      syncErrorCode: 'CLOUDINARY_AUTH_FAILED',
+      syncErrorMessage: expect.stringContaining('từ chối tài khoản'),
+    }));
   });
 
   it('reuses the stored video when a later step fails and reconciliation retries', async () => {

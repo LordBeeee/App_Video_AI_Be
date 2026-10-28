@@ -91,6 +91,21 @@ export class AiGeneration {
   @Column({ name: 'next_check_at', type: 'timestamptz', nullable: true })
   nextCheckAt?: Date | null;
 
+  @Column({ name: 'provider_status', length: 30, nullable: true })
+  providerStatus?: string | null;
+
+  @Column({ name: 'processing_stage', length: 40, nullable: true })
+  processingStage?: string | null;
+
+  @Column({ name: 'sync_error_code', length: 50, nullable: true })
+  syncErrorCode?: string | null;
+
+  @Column({ name: 'sync_error_message', type: 'text', nullable: true })
+  syncErrorMessage?: string | null;
+
+  @Column({ name: 'last_sync_attempt_at', type: 'timestamptz', nullable: true })
+  lastSyncAttemptAt?: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
 
