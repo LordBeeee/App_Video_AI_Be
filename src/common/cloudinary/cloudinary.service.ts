@@ -5,8 +5,22 @@ import * as streamifier from 'streamifier';
 
 @Injectable()
 export class CloudinaryService {
-  private uploadError(error: { message?: string }) {
-    return new BadGatewayException(`Cloudinary: ${error.message || 'Tải file lên thất bại. Vui lòng thử lại.'}`);
+  private uploadError(error: unknown) {
+    const detail = this.errorDetail(error);
+    return new BadGatewayException(`Cloudinary: ${detail.message || 'Tải file lên thất bại. Vui lòng thử lại.'}`);
+  }
+
+  private errorDetail(error: unknown): { message?: string; http_code?: number } {
+    if (!error || typeof error !== 'object')
+      return { message: typeof error === 'string' ? error : undefined };
+    const response = error as { error?: unknown; message?: unknown; http_code?: unknown };
+    const detail = response.error && typeof response.error === 'object'
+      ? response.error as { message?: unknown; http_code?: unknown }
+      : response;
+    return {
+      message: typeof detail.message === 'string' ? detail.message : undefined,
+      http_code: typeof detail.http_code === 'number' ? detail.http_code : undefined,
+    };
   }
 
   constructor(private configService: ConfigService) {
@@ -172,8 +186,8 @@ export class CloudinaryService {
       });
       return this.videoUploadResult(result);
     } catch (error) {
-      if ((error as { http_code?: number })?.http_code === 404) return null;
-      throw this.uploadError(error as { message?: string });
+      if (this.errorDetail(error).http_code === 404) return null;
+      throw this.uploadError(error);
     }
   }
 
