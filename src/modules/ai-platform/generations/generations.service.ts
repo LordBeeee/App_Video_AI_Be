@@ -186,7 +186,8 @@ export class GenerationsService {
           where: { id: In(referenceAssetIds), userId },
         })
       : [];
-    if (referenceAssets.length !== referenceAssetIds.length) {
+    if (referenceAssets.length !== referenceAssetIds.length || referenceAssets.some((asset) =>
+      ['processing','failed'].includes((asset.metadata as Record<string, any>)?.deleteStatus))) {
       throw new BadRequestException(
         'Ảnh hoặc video tham chiếu không tồn tại hoặc không thuộc tài khoản',
       );
@@ -387,21 +388,26 @@ export class GenerationsService {
         estimatedMinVnd: Number(quote.minPriceVnd),
         estimatedMaxVnd: Number(quote.maxPriceVnd),
       }),
-    );
-    if (orderedReferences.length) {
-      await this.generationAssets.save(
-        orderedReferences.map((asset, index) =>
-          this.generationAssets.create({
-            generationId: generation.id,
-            assetId: asset.id,
-            role: index === 0 ? 'input' : 'reference',
-          }),
-        ),
-      );
-    }
-    await this.wallets.attachGeneration(hold.id, generation.id);
-
+    ).catch(async (error) => {
+      await this.wallets.release(hold.id, 'Tạo nội dung thất bại');
+      if (error?.driverError?.code === '23514') {
+        throw new BadRequestException('Tài nguyên tham chiếu đang được xóa');
+      }
+      throw error;
+    });
     try {
+      if (orderedReferences.length) {
+        await this.generationAssets.save(
+          orderedReferences.map((asset, index) =>
+            this.generationAssets.create({
+              generationId: generation.id,
+              assetId: asset.id,
+              role: index === 0 ? 'input' : 'reference',
+            }),
+          ),
+        );
+      }
+      await this.wallets.attachGeneration(hold.id, generation.id);
       if (quote.modality === 'image')
         generation = await this.createImage(generation, quote, catalogModel);
       if (quote.modality === 'audio')
@@ -479,6 +485,7 @@ export class GenerationsService {
         {
           generationId: generation.id,
           fileSizeBytes: uploaded.bytes,
+          cloudinary: { publicId: uploaded.public_id, resourceType: 'image', deliveryType: 'upload' },
         },
       );
     }
@@ -519,7 +526,7 @@ export class GenerationsService {
     const providerGenerationId = String(
       response.headers['x-generation-id'] || '',
     );
-    const { secureUrl: url, durationSeconds, fileSizeBytes } = await this.cloudinary.uploadAudioBuffer(
+    const { secureUrl: url, durationSeconds, fileSizeBytes, publicId } = await this.cloudinary.uploadAudioBuffer(
       Buffer.from(response.data),
       `ai-generation/users/${generation.userId}/audio`,
       generation.id,
@@ -533,6 +540,7 @@ export class GenerationsService {
         generationId: generation.id,
         durationSeconds,
         mediaDurationSeconds: durationSeconds,
+        cloudinary: { publicId, resourceType: 'video', deliveryType: 'upload' },
         fileSizeBytes,
       },
     );

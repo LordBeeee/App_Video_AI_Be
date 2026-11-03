@@ -58,7 +58,7 @@ export class AssetsService {
         folder,
         publicId,
       );
-      result = { secure_url: audio.secureUrl, duration: audio.durationSeconds, bytes: audio.fileSizeBytes };
+      result = { secure_url: audio.secureUrl, public_id: audio.publicId, duration: audio.durationSeconds, bytes: audio.fileSizeBytes };
     } else {
       result = await this.cloudinaryService.uploadBuffer(
         file.buffer,
@@ -86,7 +86,7 @@ export class AssetsService {
         height: result.height ?? null,
         thumbnailUrl: result.thumbnail_url ?? null,
         isFavorite: false,
-        metadata: { mediaDurationSeconds: result.duration ?? null },
+        metadata: { mediaDurationSeconds: result.duration ?? null, cloudinary: { publicId: result.public_id, resourceType: isImage ? 'image' : 'video', deliveryType: 'upload' } },
       }),
     );
   }

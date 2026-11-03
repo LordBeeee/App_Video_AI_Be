@@ -299,7 +299,7 @@ describe('VideoReconciliationService', () => {
     );
     expect(assets.saveOutput).toHaveBeenCalledWith(
       'generation-1', 7, 'image', 'https://example.com/last.jpg',
-      { generationId: 'generation-1', mimeType: 'image/jpeg', fileSizeBytes: 234_567 }, 'last_frame',
+      expect.objectContaining({ generationId: 'generation-1', mimeType: 'image/jpeg', fileSizeBytes: 234_567, cloudinary: expect.objectContaining({ resourceType: 'image', deliveryType: 'upload' }) }), 'last_frame',
     );
     expect(item.status).toBe('succeeded');
   });
