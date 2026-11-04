@@ -33,6 +33,11 @@ export class AssetsController {
     return this.uploadLimits.getLimits();
   }
 
+  @Get('storage-usage')
+  getStorageUsage(@CurrentUser() user: AuthenticatedUser) {
+    return this.assetsService.getStorageUsage(user.id);
+  }
+
   @Post('upload')
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
   async upload(

@@ -81,7 +81,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
 
   private async persist(modality: AiModality, catalog: any[]) {
     const slugs = catalog.map((item) => item.id).filter(Boolean);
-    if (!slugs.length) return;
+    if (!slugs.length && modality !== 'chat') return;
     const existing = await this.models.find({
       where: { openrouterSlug: In(slugs) },
     });
@@ -109,7 +109,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     });
     await this.models.save(records, { chunk: 100 });
 
-    if (modality === 'image' || modality === 'video') {
+    if (modality === 'image' || modality === 'video' || modality === 'chat') {
       const allowed = new Set(slugs);
       const staleModels = (await this.models.find()).filter(
         (item) =>
@@ -177,7 +177,13 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
         .filter(
           (model: any) =>
             modality !== 'chat' ||
-            model.architecture?.output_modalities?.includes('text'),
+            (/^(openai|google)\//.test(model.id || '') &&
+              model.architecture?.input_modalities?.includes('text') &&
+              model.architecture?.output_modalities?.length === 1 &&
+              model.architecture.output_modalities[0] === 'text' &&
+              model.supports_streaming !== false &&
+              !/(?:^|[:/_.-])batch(?:$|[:/_.-])/i.test(model.id) &&
+              !/\(batch\)/i.test(model.name || '')),
         )
         .map((model: any) => ({
           id: model.id,

@@ -14,6 +14,7 @@ import { Conversation } from './conversation.entity';
 import { PricingQuote } from '../pricing/pricing-quote.entity';
 import { OpenRouterService } from '../openrouter.service';
 import { PricingService } from '../pricing/pricing.service';
+import { CatalogService } from '../catalog/catalog.service';
 
 @Injectable()
 export class ChatService {
@@ -29,6 +30,7 @@ export class ChatService {
     private readonly pricing: PricingService,
     private readonly wallets: WalletService,
     private readonly openRouter: OpenRouterService,
+    private readonly catalog: CatalogService,
   ) {}
 
   async createConversation(
@@ -36,6 +38,7 @@ export class ChatService {
     body: { modelSlug: string; title?: string },
   ) {
     if (!body.modelSlug) throw new BadRequestException('Model là bắt buộc');
+    await this.catalog.find('chat', body.modelSlug);
     return this.conversations.save(
       this.conversations.create({
         userId,
@@ -83,6 +86,7 @@ export class ChatService {
     const content = String(body.content || '').trim();
     if (!content) throw new BadRequestException('Tin nhắn không được để trống');
     const conversation = await this.ownedConversation(userId, conversationId);
+    await this.catalog.find('chat', conversation.modelSlug);
     const quote = await this.pricing.getValidQuote(
       userId,
       body.quoteId,

@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { CloudinaryService } from '../../../common/cloudinary/cloudinary.service';
 import { Asset } from '../../assets/entities/asset.entity';
+import { AssetsService } from '../../assets/assets.service';
 import { WalletService } from '../../wallet/wallet.service';
 import { AiGeneration } from './ai-generation.entity';
 import { AiGenerationAsset } from './ai-generation-asset.entity';
@@ -51,6 +52,7 @@ export class GenerationsService {
     private readonly videoReconciliation: VideoReconciliationService,
     private readonly seedance: SeedanceService,
     private readonly veo: VeoService,
+    private readonly library: AssetsService,
   ) {}
 
   private chargeVnd(quote: PricingQuote, actualCostUsd?: number) {
@@ -339,6 +341,9 @@ export class GenerationsService {
         );
       }
     }
+    // Admission check only: completed outputs must always be saved, even if
+    // their final size takes an already accepted job above the library quota.
+    await this.library.assertStorageAvailable(userId);
     const hold = await this.wallets.hold(
       userId,
       quote.id,

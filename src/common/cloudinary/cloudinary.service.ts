@@ -5,6 +5,16 @@ import * as streamifier from 'streamifier';
 
 @Injectable()
 export class CloudinaryService {
+  async getResourceSize(url: string, stored?: { publicId: string; resourceType: string; deliveryType: string }): Promise<number> {
+    const target = this.storageIdentity(url, stored);
+    const resource = await cloudinary.api.resource(target.publicId, {
+      resource_type: target.resourceType, type: target.deliveryType, timeout: 30_000,
+    }) as { bytes?: unknown };
+    const bytes = Number(resource.bytes);
+    if (resource.bytes == null || !Number.isSafeInteger(bytes) || bytes < 0) throw new Error('Không xác định được dung lượng file');
+    return bytes;
+  }
+
   storageIdentity(url: string, stored?: { publicId: string; resourceType: string; deliveryType: string }) {
     if (stored?.publicId && ['image','video','raw'].includes(stored.resourceType) && ['upload','private','authenticated'].includes(stored.deliveryType)) return { publicId: stored.publicId, resourceType: stored.resourceType, deliveryType: stored.deliveryType };
     const parsed = new URL(url);

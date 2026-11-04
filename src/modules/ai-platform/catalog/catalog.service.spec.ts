@@ -13,6 +13,7 @@ describe('CatalogService', () => {
 
   const createService = () => {
     const openRouter = {
+      listModels: jest.fn().mockResolvedValue({ data: [] }),
       listImageModels: jest.fn().mockResolvedValue({
         data: [
           {
@@ -60,8 +61,59 @@ describe('CatalogService', () => {
         models as never,
       ),
       models,
+      openRouter,
     };
   };
+
+  it('only offers OpenAI and Google text chat models and reuses the cache', async () => {
+    const { service, openRouter } = createService();
+    const textModel = (id: string, extra = {}) => ({
+      id,
+      name: id,
+      architecture: { input_modalities: ['text'], output_modalities: ['text'] },
+      ...extra,
+    });
+    openRouter.listModels.mockResolvedValue({ data: [
+      textModel('openai/chat-model'),
+      textModel('google/chat-model'),
+      textModel('anthropic/claude', { name: 'OpenAI: Spoofed' }),
+      textModel('openai-spoof/chat-model'),
+      textModel('google/chat-model:batch'),
+      textModel('openai/chat-model-batch'),
+      textModel('google/batch-alias', { name: 'Google: Chat (batch)' }),
+      textModel('openai/non-streaming', { supports_streaming: false }),
+      textModel('google/image', { architecture: {
+        input_modalities: ['text'], output_modalities: ['text', 'image'],
+      } }),
+      textModel('openai/audio-input', { architecture: {
+        input_modalities: ['audio'], output_modalities: ['text'],
+      } }),
+    ] } as never);
+
+    const result = await service.list('chat');
+    expect(result.map((model) => model.id)).toEqual([
+      'openai/chat-model', 'google/chat-model',
+    ]);
+    expect(await service.list('chat')).toBe(result);
+    expect(openRouter.listModels).toHaveBeenCalledTimes(1);
+    await expect(service.find('chat', 'anthropic/claude'))
+      .rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.find('chat', 'google/chat-model:batch'))
+      .rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('removes stale chat availability even when no chat models remain', async () => {
+    const { service, models } = createService();
+    const stale = {
+      openrouterSlug: 'anthropic/claude', modalities: ['chat', 'image'],
+      isActive: true, syncedAt: null,
+    };
+    models.find.mockResolvedValueOnce([]).mockResolvedValueOnce([stale]);
+    expect(await service.list('chat')).toEqual([]);
+    expect(stale.modalities).toEqual(['image']);
+    expect(stale.isActive).toBe(true);
+    expect(models.save).toHaveBeenLastCalledWith([stale], { chunk: 100 });
+  });
 
   it('returns direct Kling video models without querying OpenRouter', async () => {
     const { service } = createService();

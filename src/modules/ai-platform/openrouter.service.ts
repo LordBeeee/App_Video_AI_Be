@@ -44,7 +44,12 @@ export class OpenRouterService {
     return this.request<any>({
       method: 'GET',
       url: '/models',
-      params: { output_modalities: outputModality },
+      params: {
+        output_modalities: outputModality,
+        ...(outputModality === 'text'
+          ? { endpoints: '/api/v1/chat/completions' }
+          : {}),
+      },
     });
   }
 

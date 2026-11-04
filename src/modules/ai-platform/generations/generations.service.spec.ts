@@ -1,5 +1,31 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { GenerationsService } from './generations.service';
+
+describe('GenerationsService library quota admission', () => {
+  it.each(['image', 'audio', 'video'])('rejects a new %s before wallet holds or provider calls when the library is full', async (modality) => {
+    const wallets = { hold: jest.fn() };
+    const providers = { create: jest.fn(), submit: jest.fn(), submitOmni: jest.fn() };
+    const library = { assertStorageAvailable: jest.fn().mockRejectedValue(new ForbiddenException('Thư viện không đủ dung lượng')) };
+    const quote = { modality, modelSlug: modality === 'video' ? 'kling/kling-3.0-omni' : 'test', request: { options: {} } };
+    const quotes = { save: jest.fn() };
+    const generations = { save: jest.fn() };
+    const service = new GenerationsService(
+      generations as never, {} as never, quotes as never, {} as never,
+      { getValidQuote: jest.fn().mockResolvedValue(quote) } as never,
+      { find: jest.fn().mockResolvedValue({ provider: 'test', capabilities: {} }) } as never,
+      wallets as never, providers as never, providers as never, {} as never,
+      {} as never, {} as never, providers as never, providers as never, library as never,
+    );
+    await expect(service.create(7, { quoteId: 'quote', prompt: 'Create content' })).rejects.toBeInstanceOf(ForbiddenException);
+    expect(library.assertStorageAvailable).toHaveBeenCalledWith(7);
+    expect(wallets.hold).not.toHaveBeenCalled();
+    expect(quotes.save).not.toHaveBeenCalled();
+    expect(generations.save).not.toHaveBeenCalled();
+    expect(providers.create).not.toHaveBeenCalled();
+    expect(providers.submit).not.toHaveBeenCalled();
+    expect(providers.submitOmni).not.toHaveBeenCalled();
+  });
+});
 
 describe('GenerationsService video status', () => {
   it('reads a submitted video without calling the provider', async () => {
@@ -17,6 +43,7 @@ describe('GenerationsService video status', () => {
       {} as never, {} as never, {} as never, {} as never,
       {} as never, {} as never, {} as never, videoReconciliation as never,
       {} as never, {} as never,
+      { assertStorageAvailable: jest.fn().mockResolvedValue({}) } as never,
     );
 
     const result = await service.findOne(7, generation.id);
@@ -46,6 +73,7 @@ describe('GenerationsService video source previews', () => {
       {} as never, {} as never, {} as never, {} as never,
       {} as never, {} as never, {} as never, {} as never,
       {} as never, {} as never,
+      { assertStorageAvailable: jest.fn().mockResolvedValue({}) } as never,
     );
 
     const result = await service.list(7, 'video');
@@ -71,6 +99,7 @@ describe('GenerationsService Seedance quote binding', () => {
       generations as never, {} as never, {} as never, {} as never,
       {} as never, {} as never, {} as never, {} as never,
       {} as never, {} as never, {} as never, {} as never, seedance as never, {} as never,
+      { assertStorageAvailable: jest.fn().mockResolvedValue({}) } as never,
     );
     const generation = { prompt: 'Extend @video_1', options: { omniTaskType: 'extend' } };
     await (service as any).createVideo(generation, {
@@ -94,6 +123,7 @@ describe('GenerationsService Seedance quote binding', () => {
       { find: jest.fn().mockResolvedValue({ provider: 'seedance' }) } as never,
       wallets as never, {} as never, {} as never, {} as never,
       {} as never, {} as never, {} as never, {} as never,
+      { assertStorageAvailable: jest.fn().mockResolvedValue({}) } as never,
     );
     await expect(service.create(7, {
       quoteId: 'quote-1', prompt: 'Camera moves', referenceAssetIds: [2],
@@ -136,6 +166,7 @@ describe('GenerationsService Kling Element validation', () => {
     {} as never,
     {} as never,
     {} as never,
+    { assertStorageAvailable: jest.fn().mockResolvedValue({}) } as never,
   );
 
   beforeEach(() => {
@@ -221,6 +252,7 @@ describe('GenerationsService Omni asset checks', () => {
       maxReferenceImages: 7, maxImageMb: 50, maxPromptCharacters: 3072,
     } }) } as never,
     wallets as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never,
+    { assertStorageAvailable: jest.fn().mockResolvedValue({}) } as never,
   );
 
   beforeEach(() => { assets.find.mockReset(); wallets.hold.mockReset(); });
