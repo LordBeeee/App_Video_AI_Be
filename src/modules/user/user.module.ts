@@ -6,9 +6,10 @@ import { UserController } from './user.controller';
 import { Role } from './entities/role.entity';
 import { CloudinaryModule } from '../../common/cloudinary/cloudinary.module';
 import { StatisticsService } from './statistics.service';
+import { WalletModule } from '../wallet/wallet.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Role]), CloudinaryModule],
+  imports: [TypeOrmModule.forFeature([User, Role]), CloudinaryModule, WalletModule],
   controllers: [UserController],
   providers: [UserService, StatisticsService],
   exports: [UserService],

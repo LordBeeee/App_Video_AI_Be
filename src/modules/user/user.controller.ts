@@ -26,12 +26,14 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { StatisticsService } from './statistics.service';
+import { WalletService } from '../wallet/wallet.service';
 
 @Controller('users')
 export class UserController {
   constructor(
     private readonly userService: UserService,
     private readonly statistics: StatisticsService,
+    private readonly wallets: WalletService,
   ) {}
 
   // ── Bản thân user ─────────────────────────────────────────────────────────
@@ -188,13 +190,14 @@ export class UserController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(1)
   @Get(':id/ai-usage')
-  getEmployeeAiUsage(@Param('id') id: string, @Query('days') days?: string, @Query('from') from?: string, @Query('to') to?: string) {
-    return this.statistics.getEmployeeAiUsage(
+  async getEmployeeAiUsage(@Param('id') id: string, @Query('days') days?: string, @Query('from') from?: string, @Query('to') to?: string) {
+    const usage = await this.statistics.getEmployeeAiUsage(
       parseInt(id),
       parseInt(days ?? '30'),
       from,
       to,
     );
+    return { ...usage, wallet: await this.wallets.summary(usage.employee.id) };
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -232,8 +235,9 @@ export class UserController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(1)
   @Get(':id')
-  findEmployee(@Param('id') id: string) {
-    return this.userService.findEmployee(parseInt(id));
+  async findEmployee(@Param('id') id: string) {
+    const employee = await this.userService.findEmployee(parseInt(id));
+    return { ...employee, wallet: await this.wallets.summary(employee.id) };
   }
 
   // ── Admin: xóa nhân viên ──────────────────────────────────────────────────

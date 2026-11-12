@@ -8,6 +8,9 @@ import { CatalogService, AiModality } from '../catalog/catalog.service';
 import { formatKlingShots } from '../catalog/kling-video';
 import { FxService } from './fx.service';
 import { PricingQuote } from './pricing-quote.entity';
+import { ChatMessage } from '../chat/chat-message.entity';
+import { Conversation } from '../chat/conversation.entity';
+import { chatContent, chatDocuments } from '../chat/chat-documents';
 import { estimateSeedanceTokens, seedanceOutputDimensions } from './seedance-pricing';
 import {
   calculateRetailVnd,
@@ -36,6 +39,24 @@ export class PricingService {
 
   hashPrompt(prompt = '') {
     return createHash('sha256').update(prompt).digest('hex');
+  }
+
+  async chatHistory(userId: number, conversationId?: string) {
+    if (!conversationId) return [];
+    const conversation = await this.quotes.manager.getRepository(Conversation).findOne({
+      where: { id: conversationId, userId },
+    });
+    if (!conversation) throw new BadRequestException('Không tìm thấy hội thoại');
+    const history = await this.quotes.manager.getRepository(ChatMessage).find({
+      where: { conversationId }, order: { createdAt: 'DESC', id: 'DESC' }, take: 39,
+    });
+    return history.reverse();
+  }
+
+  chatHistoryHash(history: ChatMessage[]) {
+    return this.hashPrompt(JSON.stringify(history.map((message) => ({
+      id: message.id, role: message.role, content: message.content, documents: message.documents || [],
+    }))));
   }
 
   private number(value: unknown) {
@@ -280,8 +301,15 @@ export class PricingService {
         throw new BadRequestException('Seed phải là số nguyên');
       }
     }
-    if (modality === 'audio' && options.voice && model.voices?.length) {
+    if (modality === 'audio') {
+      if (!options.voice) throw new BadRequestException('Vui lòng chọn giọng đọc');
       check(options.voice, model.voices, 'Giọng đọc');
+      if (options.speed != null && (typeof options.speed !== 'number' || !Number.isFinite(options.speed))) {
+        throw new BadRequestException('Tốc độ không hợp lệ');
+      }
+      if (options.speed != null && options.speed !== 1) {
+        check(options.speed, caps.speeds, 'Tốc độ');
+      }
     }
   }
 
@@ -441,10 +469,25 @@ export class PricingService {
   }
 
   private audioCost(model: any, prompt: string) {
-    const perCharacter = this.number(
-      model.pricing?.prompt || model.pricing?.input || model.pricing?.request,
-    );
-    return perCharacter * prompt.length;
+    const inputRate = this.number(model.pricing?.prompt);
+    if (model.provider === 'google') {
+      const outputRate = this.number(model.pricing?.completion);
+      const maxOutputTokens = Number(model.maxOutputTokens);
+      if (!(inputRate > 0) || !(outputRate > 0) ||
+          !Number.isInteger(maxOutputTokens) || maxOutputTokens <= 0) {
+        throw new BadRequestException('Model chưa có dữ liệu giá âm thanh phù hợp');
+      }
+      const { inputTokens } = estimateChatTokens(prompt, undefined, undefined);
+      // UTF-8 bytes bound input tokens; reserve the provider's output limit.
+      return {
+        min: inputTokens * inputRate,
+        max: Buffer.byteLength(prompt, 'utf8') * inputRate + maxOutputTokens * outputRate,
+        units: { basis: 'tokens', inputTokens, maxOutputTokens },
+      };
+    }
+    const characters = Array.from(prompt).length;
+    const cost = inputRate * characters;
+    return { min: cost, max: cost, units: { basis: 'characters', characters } };
   }
 
   private chatCost(model: any, prompt: string, options: Record<string, any>) {
@@ -470,6 +513,18 @@ export class PricingService {
     if (!request.modelSlug) throw new BadRequestException('Model là bắt buộc');
     const prompt = String(request.prompt || '').trim();
     const options = request.options || {};
+    let chatContextHash: string | undefined;
+    let chatPrompt = prompt;
+    if (request.modality === 'chat') {
+      options.documents = chatDocuments(options.documents);
+      if (options.conversationId != null &&
+          (typeof options.conversationId !== 'string' || !/^[0-9a-f-]{36}$/i.test(options.conversationId)))
+        throw new BadRequestException('Hội thoại không hợp lệ');
+      const history = await this.chatHistory(userId, options.conversationId);
+      chatContextHash = this.chatHistoryHash(history);
+      chatPrompt = [...history.map((message) => chatContent(message.content, message.documents)),
+        chatContent(prompt, options.documents)].join('\n');
+    }
     const model = await this.catalog.find(request.modality, request.modelSlug);
     this.validateOptions(request.modality, model, options);
     if (
@@ -526,10 +581,18 @@ export class PricingService {
         holdBufferRate,
       };
     }
-    if (request.modality === 'audio')
-      minUsd = maxUsd = this.audioCost(model, prompt);
+    if (request.modality === 'audio') {
+      if (!prompt) throw new BadRequestException('Kịch bản là bắt buộc');
+      const audio = this.audioCost(model, prompt);
+      minUsd = audio.min;
+      maxUsd = audio.max;
+      units = audio.units;
+    }
     if (request.modality === 'chat') {
-      const chat = this.chatCost(model, prompt, options);
+      const chat = this.chatCost(model, chatPrompt, options);
+      options.maxOutputTokens = chat.maxOutputTokens;
+      if (model.contextLength && chat.inputTokens + chat.maxOutputTokens > model.contextLength)
+        throw new BadRequestException('Nội dung và tài liệu vượt giới hạn model. Hãy chia nhỏ hoặc tạo hội thoại mới.');
       minUsd = chat.min;
       maxUsd = chat.max;
       units = {
@@ -562,6 +625,7 @@ export class PricingService {
         promptHash: this.hashPrompt(prompt),
         promptLength: prompt.length,
         units,
+        ...(chatContextHash ? { chatContextHash } : {}),
         ...(request.modality === 'video' && ['kling', 'seedance'].includes(model.provider)
           ? {
               priceBasis: model.pricing.unitType,

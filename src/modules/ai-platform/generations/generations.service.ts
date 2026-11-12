@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { CloudinaryService } from '../../../common/cloudinary/cloudinary.service';
 import { Asset } from '../../assets/entities/asset.entity';
+import { AssetsService } from '../../assets/assets.service';
 import { WalletService } from '../../wallet/wallet.service';
 import { AiGeneration } from './ai-generation.entity';
 import { AiGenerationAsset } from './ai-generation-asset.entity';
@@ -51,6 +52,7 @@ export class GenerationsService {
     private readonly videoReconciliation: VideoReconciliationService,
     private readonly seedance: SeedanceService,
     private readonly veo: VeoService,
+    private readonly library: AssetsService,
   ) {}
 
   private chargeVnd(quote: PricingQuote, actualCostUsd?: number) {
@@ -186,7 +188,8 @@ export class GenerationsService {
           where: { id: In(referenceAssetIds), userId },
         })
       : [];
-    if (referenceAssets.length !== referenceAssetIds.length) {
+    if (referenceAssets.length !== referenceAssetIds.length || referenceAssets.some((asset) =>
+      ['processing','failed'].includes((asset.metadata as Record<string, any>)?.deleteStatus))) {
       throw new BadRequestException(
         'Ảnh hoặc video tham chiếu không tồn tại hoặc không thuộc tài khoản',
       );
@@ -338,6 +341,9 @@ export class GenerationsService {
         );
       }
     }
+    // Admission check only: completed outputs must always be saved, even if
+    // their final size takes an already accepted job above the library quota.
+    await this.library.assertStorageAvailable(userId);
     const hold = await this.wallets.hold(
       userId,
       quote.id,
@@ -387,25 +393,30 @@ export class GenerationsService {
         estimatedMinVnd: Number(quote.minPriceVnd),
         estimatedMaxVnd: Number(quote.maxPriceVnd),
       }),
-    );
-    if (orderedReferences.length) {
-      await this.generationAssets.save(
-        orderedReferences.map((asset, index) =>
-          this.generationAssets.create({
-            generationId: generation.id,
-            assetId: asset.id,
-            role: index === 0 ? 'input' : 'reference',
-          }),
-        ),
-      );
-    }
-    await this.wallets.attachGeneration(hold.id, generation.id);
-
+    ).catch(async (error) => {
+      await this.wallets.release(hold.id, 'Tạo nội dung thất bại');
+      if (error?.driverError?.code === '23514') {
+        throw new BadRequestException('Tài nguyên tham chiếu đang được xóa');
+      }
+      throw error;
+    });
     try {
+      if (orderedReferences.length) {
+        await this.generationAssets.save(
+          orderedReferences.map((asset, index) =>
+            this.generationAssets.create({
+              generationId: generation.id,
+              assetId: asset.id,
+              role: index === 0 ? 'input' : 'reference',
+            }),
+          ),
+        );
+      }
+      await this.wallets.attachGeneration(hold.id, generation.id);
       if (quote.modality === 'image')
         generation = await this.createImage(generation, quote, catalogModel);
       if (quote.modality === 'audio')
-        generation = await this.createAudio(generation, quote);
+        generation = await this.createAudio(generation, quote, catalogModel);
       if (quote.modality === 'video')
         generation = await this.createVideo(generation, catalogModel);
       const hydrated = await this.generations.findOneOrFail({
@@ -479,6 +490,7 @@ export class GenerationsService {
         {
           generationId: generation.id,
           fileSizeBytes: uploaded.bytes,
+          cloudinary: { publicId: uploaded.public_id, resourceType: 'image', deliveryType: 'upload' },
         },
       );
     }
@@ -506,20 +518,36 @@ export class GenerationsService {
     return generation;
   }
 
-  private async createAudio(generation: AiGeneration, quote: PricingQuote) {
+  private async createAudio(generation: AiGeneration, quote: PricingQuote, model: any) {
     const opts = generation.options || {};
     if (!opts.voice) throw new BadRequestException('Vui lòng chọn giọng đọc');
+    if (!model.voices?.includes(opts.voice)) {
+      throw new BadRequestException('Giọng đọc không được model hỗ trợ');
+    }
+    const isGoogle = model.provider === 'google';
+    const maxOutputTokens = Number(quote.request?.units?.maxOutputTokens);
+    if (isGoogle && (!Number.isInteger(maxOutputTokens) || maxOutputTokens <= 0)) {
+      throw new BadRequestException('Vui lòng lấy lại báo giá âm thanh');
+    }
+    const speed = opts.speed ?? 1;
+    if (speed !== 1 && !model.capabilities?.speeds?.includes(speed)) {
+      throw new BadRequestException('Tốc độ không được model hỗ trợ');
+    }
     const response = await this.openRouter.generateSpeech({
       model: generation.modelSlug,
       input: generation.prompt,
       voice: opts.voice,
-      response_format: 'mp3',
-      speed: Number(opts.speed || 1),
+      response_format: model.capabilities.responseFormat,
+      ...(isGoogle ? {
+        provider: { options: { 'google-ai-studio': { maxOutputTokens } } },
+      } : model.capabilities.speeds?.length ? {
+        provider: { options: { elevenlabs: { voice_settings: { speed } } } },
+      } : {}),
     });
     const providerGenerationId = String(
       response.headers['x-generation-id'] || '',
     );
-    const { secureUrl: url, durationSeconds, fileSizeBytes } = await this.cloudinary.uploadAudioBuffer(
+    const { secureUrl: url, durationSeconds, fileSizeBytes, publicId } = await this.cloudinary.uploadAudioBuffer(
       Buffer.from(response.data),
       `ai-generation/users/${generation.userId}/audio`,
       generation.id,
@@ -533,6 +561,7 @@ export class GenerationsService {
         generationId: generation.id,
         durationSeconds,
         mediaDurationSeconds: durationSeconds,
+        cloudinary: { publicId, resourceType: 'video', deliveryType: 'upload' },
         fileSizeBytes,
       },
     );

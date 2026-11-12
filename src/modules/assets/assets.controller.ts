@@ -4,6 +4,7 @@ import {
 } from '../auth/decorators/current-user.decorator';
 import {
   Controller,
+  Delete,
   Get,
   Post,
   Patch,
@@ -18,17 +19,23 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AssetDeletionService } from './asset-deletion.service';
 import { AssetsService } from './assets.service';
 import { UploadLimitsService } from '../../common/cloudinary/upload-limits.service';
 
 @Controller('assets')
 @UseGuards(JwtAuthGuard)
 export class AssetsController {
-  constructor(private readonly assetsService: AssetsService, private readonly uploadLimits: UploadLimitsService) {}
+  constructor(private readonly assetsService: AssetsService, private readonly uploadLimits: UploadLimitsService, private readonly deletion: AssetDeletionService) {}
 
   @Get('upload-limits')
   getUploadLimits() {
     return this.uploadLimits.getLimits();
+  }
+
+  @Get('storage-usage')
+  getStorageUsage(@CurrentUser() user: AuthenticatedUser) {
+    return this.assetsService.getStorageUsage(user.id);
   }
 
   @Post('upload')
@@ -53,6 +60,11 @@ export class AssetsController {
       type,
       favoritesOnly: favorite === 'true',
     });
+  }
+
+  @Delete(':id')
+  delete(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.deletion.request(user.id, id);
   }
 
   @Patch(':id/favorite')

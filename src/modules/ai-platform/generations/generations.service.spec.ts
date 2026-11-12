@@ -1,5 +1,96 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { GenerationsService } from './generations.service';
+
+describe('GenerationsService library quota admission', () => {
+  it.each(['image', 'audio', 'video'])('rejects a new %s before wallet holds or provider calls when the library is full', async (modality) => {
+    const wallets = { hold: jest.fn() };
+    const providers = { create: jest.fn(), submit: jest.fn(), submitOmni: jest.fn() };
+    const library = { assertStorageAvailable: jest.fn().mockRejectedValue(new ForbiddenException('Thư viện không đủ dung lượng')) };
+    const quote = { modality, modelSlug: modality === 'video' ? 'kling/kling-3.0-omni' : 'test', request: { options: {} } };
+    const quotes = { save: jest.fn() };
+    const generations = { save: jest.fn() };
+    const service = new GenerationsService(
+      generations as never, {} as never, quotes as never, {} as never,
+      { getValidQuote: jest.fn().mockResolvedValue(quote) } as never,
+      { find: jest.fn().mockResolvedValue({ provider: 'test', capabilities: {} }) } as never,
+      wallets as never, providers as never, providers as never, {} as never,
+      {} as never, {} as never, providers as never, providers as never, library as never,
+    );
+    await expect(service.create(7, { quoteId: 'quote', prompt: 'Create content' })).rejects.toBeInstanceOf(ForbiddenException);
+    expect(library.assertStorageAvailable).toHaveBeenCalledWith(7);
+    expect(wallets.hold).not.toHaveBeenCalled();
+    expect(quotes.save).not.toHaveBeenCalled();
+    expect(generations.save).not.toHaveBeenCalled();
+    expect(providers.create).not.toHaveBeenCalled();
+    expect(providers.submit).not.toHaveBeenCalled();
+    expect(providers.submitOmni).not.toHaveBeenCalled();
+  });
+});
+
+describe('GenerationsService speech generation', () => {
+  const setup = (provider: 'google' | 'elevenlabs') => {
+    const model = {
+      provider, voices: ['voice-a'],
+      capabilities: { responseFormat: provider === 'google' ? 'pcm' : 'mp3', speeds: provider === 'google' ? [] : [0.75, 1, 1.1, 1.2] },
+    };
+    const quote = {
+      id: 'quote-1', modality: 'audio', modelSlug: `${provider}/tts`,
+      maxPriceVnd: 4000, minPriceVnd: 1, usdVndRate: '25000', markupRate: '0',
+      request: { options: { voice: 'voice-a', speed: 1 }, units: { maxOutputTokens: 16384 } },
+    };
+    let stored: any;
+    const generations = {
+      create: jest.fn((value) => ({ ...value, id: 'audio-1' })),
+      save: jest.fn(async (value) => { stored = value; return value; }),
+      findOneOrFail: jest.fn(async () => stored),
+    };
+    const wallets = {
+      hold: jest.fn().mockResolvedValue({ id: 'hold-1' }),
+      attachGeneration: jest.fn(), settle: jest.fn(), release: jest.fn(),
+    };
+    const openRouter = {
+      generateSpeech: jest.fn().mockResolvedValue({ data: Buffer.from('audio'), headers: { 'x-generation-id': 'gen-audio' } }),
+      getGeneration: jest.fn().mockResolvedValue({ data: { total_cost: 0.01 } }),
+    };
+    const cloudinary = { uploadAudioBuffer: jest.fn().mockResolvedValue({ secureUrl: 'https://example.com/audio.mp3', durationSeconds: 2, publicId: 'audio-1', fileSizeBytes: 100 }) };
+    const outputAssets = { saveOutput: jest.fn() };
+    const service = new GenerationsService(
+      generations as never, {} as never, { save: jest.fn() } as never, {} as never,
+      { getValidQuote: async () => quote } as never, { find: async () => model } as never,
+      wallets as never, openRouter as never, {} as never, cloudinary as never,
+      outputAssets as never, {} as never, {} as never, {} as never,
+      { assertStorageAvailable: jest.fn() } as never,
+    );
+    return { service, quote, wallets, openRouter, cloudinary, outputAssets, generations };
+  };
+
+  it.each(['google', 'elevenlabs'] as const)('uses the existing upload, library and wallet flow for %s', async (provider) => {
+    const { service, quote, wallets, openRouter, cloudinary, outputAssets } = setup(provider);
+    const result = await service.create(7, { quoteId: quote.id, prompt: 'Xin chào' });
+    expect(openRouter.generateSpeech).toHaveBeenCalledWith({
+      model: `${provider}/tts`, input: 'Xin chào', voice: 'voice-a',
+      response_format: provider === 'google' ? 'pcm' : 'mp3',
+      provider: { options: provider === 'google'
+        ? { 'google-ai-studio': { maxOutputTokens: 16384 } }
+        : { elevenlabs: { voice_settings: { speed: 1 } } } },
+    });
+    expect(cloudinary.uploadAudioBuffer).toHaveBeenCalledTimes(1);
+    expect(outputAssets.saveOutput).toHaveBeenCalledWith('audio-1', 7, 'audio', 'https://example.com/audio.mp3', expect.any(Object));
+    expect(wallets.settle).toHaveBeenCalledWith('hold-1', 250, { generationId: 'audio-1', modality: 'audio' });
+    expect(wallets.release).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: 'succeeded', chargedVnd: 250, outputUrls: ['https://example.com/audio.mp3'] });
+  });
+
+  it.each(['provider', 'upload'] as const)('releases the hold and records failure if %s fails', async (stage) => {
+    const { service, wallets, openRouter, cloudinary, generations } = setup('google');
+    (stage === 'provider' ? openRouter.generateSpeech : cloudinary.uploadAudioBuffer)
+      .mockRejectedValueOnce(new Error('Speech failed'));
+    await expect(service.create(7, { quoteId: 'quote-1', prompt: 'Xin chào' })).rejects.toThrow('Speech failed');
+    expect(wallets.release).toHaveBeenCalledWith('hold-1', 'Speech failed');
+    expect(wallets.settle).not.toHaveBeenCalled();
+    expect(generations.save).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'failed', errorMessage: 'Speech failed' }));
+  });
+});
 
 describe('GenerationsService video status', () => {
   it('reads a submitted video without calling the provider', async () => {
@@ -17,6 +108,7 @@ describe('GenerationsService video status', () => {
       {} as never, {} as never, {} as never, {} as never,
       {} as never, {} as never, {} as never, videoReconciliation as never,
       {} as never, {} as never,
+      { assertStorageAvailable: jest.fn().mockResolvedValue({}) } as never,
     );
 
     const result = await service.findOne(7, generation.id);
@@ -46,6 +138,7 @@ describe('GenerationsService video source previews', () => {
       {} as never, {} as never, {} as never, {} as never,
       {} as never, {} as never, {} as never, {} as never,
       {} as never, {} as never,
+      { assertStorageAvailable: jest.fn().mockResolvedValue({}) } as never,
     );
 
     const result = await service.list(7, 'video');
@@ -71,6 +164,7 @@ describe('GenerationsService Seedance quote binding', () => {
       generations as never, {} as never, {} as never, {} as never,
       {} as never, {} as never, {} as never, {} as never,
       {} as never, {} as never, {} as never, {} as never, seedance as never, {} as never,
+      { assertStorageAvailable: jest.fn().mockResolvedValue({}) } as never,
     );
     const generation = { prompt: 'Extend @video_1', options: { omniTaskType: 'extend' } };
     await (service as any).createVideo(generation, {
@@ -94,6 +188,7 @@ describe('GenerationsService Seedance quote binding', () => {
       { find: jest.fn().mockResolvedValue({ provider: 'seedance' }) } as never,
       wallets as never, {} as never, {} as never, {} as never,
       {} as never, {} as never, {} as never, {} as never,
+      { assertStorageAvailable: jest.fn().mockResolvedValue({}) } as never,
     );
     await expect(service.create(7, {
       quoteId: 'quote-1', prompt: 'Camera moves', referenceAssetIds: [2],
@@ -136,6 +231,7 @@ describe('GenerationsService Kling Element validation', () => {
     {} as never,
     {} as never,
     {} as never,
+    { assertStorageAvailable: jest.fn().mockResolvedValue({}) } as never,
   );
 
   beforeEach(() => {
@@ -221,6 +317,7 @@ describe('GenerationsService Omni asset checks', () => {
       maxReferenceImages: 7, maxImageMb: 50, maxPromptCharacters: 3072,
     } }) } as never,
     wallets as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never,
+    { assertStorageAvailable: jest.fn().mockResolvedValue({}) } as never,
   );
 
   beforeEach(() => { assets.find.mockReset(); wallets.hold.mockReset(); });

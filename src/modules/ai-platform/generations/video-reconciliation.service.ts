@@ -146,6 +146,7 @@ export class VideoReconciliationService
           output = await this.outputAssets.saveOutput(
             generation.id, generation.userId, 'video', uploaded.secure_url,
             { generationId: generation.id, thumbnailUrl: uploaded.thumbnail_url,
+              cloudinary: { publicId: uploaded.public_id, resourceType: 'video', deliveryType: 'upload' },
               fileSizeBytes: uploaded.bytes, durationSeconds: uploaded.duration,
               mediaDurationSeconds: uploaded.duration, width: uploaded.width,
               height: uploaded.height, fps: uploaded.frame_rate },
@@ -166,7 +167,7 @@ export class VideoReconciliationService
               generation.userId,
               'image',
               image.secure_url,
-              { generationId: generation.id, mimeType: 'image/jpeg', fileSizeBytes: image.bytes },
+              { generationId: generation.id, mimeType: 'image/jpeg', fileSizeBytes: image.bytes, cloudinary: { publicId: image.public_id, resourceType: 'image', deliveryType: 'upload' } },
               'last_frame',
             );
           } catch (error) {

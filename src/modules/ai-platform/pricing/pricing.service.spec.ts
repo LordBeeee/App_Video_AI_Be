@@ -4,6 +4,7 @@ import { KLING_VIDEO_MODELS } from '../catalog/kling-video';
 import { SEEDANCE_VIDEO_MODELS } from '../catalog/seedance-video';
 import { VEO_VIDEO_MODELS } from '../catalog/veo-video';
 import { seedanceOutputDimensions } from './seedance-pricing';
+import { Conversation } from '../chat/conversation.entity';
 
 describe('PricingService option validation', () => {
   const service = new PricingService(
@@ -333,5 +334,86 @@ describe('PricingService option validation', () => {
     await expect(
       pricing.getValidQuote(1, 'quote-1', 'move forward'),
     ).resolves.toBe(savedQuote);
+  });
+});
+
+describe('Speech pricing and options', () => {
+  const model = {
+    provider: 'google', voices: ['Kore'], capabilities: { speeds: [] },
+    maxOutputTokens: 16384, pricing: { prompt: '0.0000005', completion: '0.000006' },
+  };
+  const setup = (selectedModel = model) => {
+    const quotes = {
+      create: jest.fn((value) => ({ ...value, id: 'speech-quote' })),
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new PricingService(quotes as never,
+      { find: async () => selectedModel } as never,
+      { getUsdVndRate: async () => ({ rate: 25000, source: 'test' }) } as never,
+      { get: () => '0' } as never, {} as never);
+    return { service, quotes };
+  };
+
+  it('reserves Google output tokens as well as input instead of charging only characters', async () => {
+    const { service, quotes } = setup();
+    await service.createQuote(1, { modality: 'audio', modelSlug: 'google/tts', prompt: 'Xin chào', options: { voice: 'Kore' } });
+    const stored = quotes.create.mock.calls[0][0];
+    expect(Number(stored.providerCostMaxUsd)).toBeCloseTo(Buffer.byteLength('Xin chào') * 0.0000005 + 16384 * 0.000006);
+    expect(stored.request.units).toMatchObject({ basis: 'tokens', maxOutputTokens: 16384 });
+    expect(stored.maxPriceVnd).toBeGreaterThan(stored.minPriceVnd);
+  });
+
+  it('charges ElevenLabs by Unicode characters and excludes a request fee fallback', () => {
+    const { service } = setup();
+    const cost = (service as any).audioCost({ provider: 'elevenlabs', pricing: { prompt: '0.00004', request: '1' } }, 'Hi 😀');
+    expect(cost).toMatchObject({ min: 0.00016, max: 0.00016, units: { basis: 'characters', characters: 4 } });
+  });
+
+  it.each([{}, { voice: 'george' }, { voice: 'Kore', speed: 1.25 }, { voice: 'Kore', speed: '1' }])('rejects missing/foreign voices and unsupported speeds: %j', async (options) => {
+    const { service, quotes } = setup();
+    await expect(service.createQuote(1, { modality: 'audio', modelSlug: 'google/tts', prompt: 'Hello', options })).rejects.toBeInstanceOf(BadRequestException);
+    expect(quotes.save).not.toHaveBeenCalled();
+  });
+
+  it('rejects Google pricing without an output rate', async () => {
+    const { service } = setup({ ...model, pricing: { prompt: '0.000001', completion: '0' } });
+    await expect(service.createQuote(1, { modality: 'audio', modelSlug: 'google/tts', prompt: 'Hello', options: { voice: 'Kore' } })).rejects.toThrow('dữ liệu giá');
+  });
+});
+
+describe('Chat document pricing', () => {
+  it('quotes the same recent history and document text that will be sent upstream', async () => {
+    const document = { name: 'report.txt', text: 'Revenue '.repeat(100).trim() };
+    const history = [
+      { id: 'newer', content: 'Answer '.repeat(50), role: 'assistant', documents: [] },
+      { id: 'older', content: 'Read this', role: 'user', documents: [document] },
+    ];
+    const historyRepository = { find: jest.fn().mockResolvedValue(history) };
+    const conversationRepository = { findOne: jest.fn().mockResolvedValue({ id: 'conversation' }) };
+    const quotes = {
+      manager: { getRepository: (entity: unknown) => entity === Conversation ? conversationRepository : historyRepository },
+      create: jest.fn((value) => ({ ...value, id: 'quote' })),
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+    const catalog = { find: jest.fn().mockResolvedValue({
+      name: 'Chat', maxOutputTokens: 2048, contextLength: 100000,
+      pricing: { prompt: '0.000001', completion: '0.000002' },
+    }) };
+    const pricing = new PricingService(quotes as never, catalog as never,
+      { getUsdVndRate: async () => ({ rate: 26000, source: 'test' }) } as never,
+      { get: () => undefined } as never, {} as never);
+    const result = await pricing.createQuote(1, {
+      modality: 'chat', modelSlug: 'google/chat', prompt: 'Summarize',
+      options: { conversationId: '12345678-1234-1234-1234-123456789abc', documents: [document], maxOutputTokens: 4096 },
+    });
+    expect(result.details.inputTokens).toBeGreaterThan(400);
+    expect(result.details.maxOutputTokens).toBe(2048);
+    const stored = quotes.create.mock.calls[0][0];
+    expect(stored.request.options.documents).toEqual([document]);
+    expect(stored.request.options.maxOutputTokens).toBe(2048);
+    expect(stored.request.chatContextHash).toBeTruthy();
+    expect(historyRepository.find).toHaveBeenCalledWith(expect.objectContaining({
+      take: 39, order: { createdAt: 'DESC', id: 'DESC' },
+    }));
   });
 });

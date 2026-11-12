@@ -13,6 +13,7 @@ describe('CatalogService', () => {
 
   const createService = () => {
     const openRouter = {
+      listModels: jest.fn().mockResolvedValue({ data: [] }),
       listImageModels: jest.fn().mockResolvedValue({
         data: [
           {
@@ -60,8 +61,98 @@ describe('CatalogService', () => {
         models as never,
       ),
       models,
+      openRouter,
     };
   };
+
+  it('only offers OpenAI and Google text chat models and reuses the cache', async () => {
+    const { service, openRouter } = createService();
+    const textModel = (id: string, extra = {}) => ({
+      id,
+      name: id,
+      architecture: { input_modalities: ['text'], output_modalities: ['text'] },
+      ...extra,
+    });
+    openRouter.listModels.mockResolvedValue({ data: [
+      textModel('openai/chat-model'),
+      textModel('google/chat-model'),
+      textModel('anthropic/claude', { name: 'OpenAI: Spoofed' }),
+      textModel('openai-spoof/chat-model'),
+      textModel('google/chat-model:batch'),
+      textModel('openai/chat-model-batch'),
+      textModel('google/batch-alias', { name: 'Google: Chat (batch)' }),
+      textModel('openai/non-streaming', { supports_streaming: false }),
+      textModel('google/image', { architecture: {
+        input_modalities: ['text'], output_modalities: ['text', 'image'],
+      } }),
+      textModel('openai/audio-input', { architecture: {
+        input_modalities: ['audio'], output_modalities: ['text'],
+      } }),
+    ] } as never);
+
+    const result = await service.list('chat');
+    expect(result.map((model) => model.id)).toEqual([
+      'openai/chat-model', 'google/chat-model',
+    ]);
+    expect(await service.list('chat')).toBe(result);
+    expect(openRouter.listModels).toHaveBeenCalledTimes(1);
+    await expect(service.find('chat', 'anthropic/claude'))
+      .rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.find('chat', 'google/chat-model:batch'))
+      .rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('removes stale chat availability even when no chat models remain', async () => {
+    const { service, models } = createService();
+    const stale = {
+      openrouterSlug: 'anthropic/claude', modalities: ['chat', 'image'],
+      isActive: true, syncedAt: null,
+    };
+    models.find.mockResolvedValueOnce([]).mockResolvedValueOnce([stale]);
+    expect(await service.list('chat')).toEqual([]);
+    expect(stale.modalities).toEqual(['image']);
+    expect(stale.isActive).toBe(true);
+    expect(models.save).toHaveBeenLastCalledWith([stale], { chunk: 100 });
+  });
+
+  it('only offers ElevenLabs and Google speech models with their own voices and controls', async () => {
+    const { service, openRouter } = createService();
+    const speech = (id: string, voices = ['voice-a']) => ({
+      id, supported_voices: voices,
+      architecture: { input_modalities: ['text'], output_modalities: ['speech'] },
+    });
+    openRouter.listModels.mockResolvedValue({ data: [
+      speech('elevenlabs/eleven-flash-v2.5', ['george']),
+      speech('elevenlabs/eleven-v4', ['sarah']),
+      speech('google/gemini-tts', ['Kore']),
+      speech('openai/tts'), speech('google-spoof/tts'),
+      { ...speech('google/chat'), architecture: { input_modalities: ['text'], output_modalities: ['text'] } },
+    ] } as never);
+    const result = await service.list('audio');
+    expect(openRouter.listModels).toHaveBeenCalledWith('speech');
+    expect(result.map((model) => model.id)).toEqual([
+      'elevenlabs/eleven-flash-v2.5', 'elevenlabs/eleven-v4', 'google/gemini-tts',
+    ]);
+    expect(result[0]).toMatchObject({ provider: 'elevenlabs', voices: ['george'], capabilities: { responseFormat: 'mp3', speeds: [0.75, 1, 1.1, 1.2] } });
+    expect(result[1].capabilities.speeds).toEqual([]);
+    expect(result[2]).toMatchObject({ provider: 'google', voices: ['Kore'], capabilities: { responseFormat: 'pcm', speeds: [] } });
+    await expect(service.find('audio', 'openai/tts')).rejects.toBeInstanceOf(BadRequestException);
+    expect(await service.list('audio')).toBe(result);
+    expect(openRouter.listModels).toHaveBeenCalledTimes(1);
+  });
+
+  it('removes stale audio availability without deleting historical model records', async () => {
+    const { service, models } = createService();
+    const stale = [
+      { openrouterSlug: 'openai/tts', modalities: ['audio'], isActive: true },
+      { openrouterSlug: 'other/model', modalities: ['audio', 'chat'], isActive: true },
+    ];
+    models.find.mockResolvedValueOnce([]).mockResolvedValueOnce(stale);
+    expect(await service.list('audio')).toEqual([]);
+    expect(stale[0]).toMatchObject({ modalities: [], isActive: false });
+    expect(stale[1]).toMatchObject({ modalities: ['chat'], isActive: true });
+    expect(models.save).toHaveBeenLastCalledWith(stale, { chunk: 100 });
+  });
 
   it('returns direct Kling video models without querying OpenRouter', async () => {
     const { service } = createService();

@@ -81,7 +81,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
 
   private async persist(modality: AiModality, catalog: any[]) {
     const slugs = catalog.map((item) => item.id).filter(Boolean);
-    if (!slugs.length) return;
+    if (!slugs.length && modality !== 'chat' && modality !== 'audio') return;
     const existing = await this.models.find({
       where: { openrouterSlug: In(slugs) },
     });
@@ -109,7 +109,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     });
     await this.models.save(records, { chunk: 100 });
 
-    if (modality === 'image' || modality === 'video') {
+    if (['image', 'video', 'chat', 'audio'].includes(modality)) {
       const allowed = new Set(slugs);
       const staleModels = (await this.models.find()).filter(
         (item) =>
@@ -176,8 +176,18 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
       data = (response.data || [])
         .filter(
           (model: any) =>
-            modality !== 'chat' ||
-            model.architecture?.output_modalities?.includes('text'),
+            modality === 'audio'
+              ? /^(elevenlabs|google)\//.test(model.id || '') &&
+                model.architecture?.input_modalities?.includes('text') &&
+                model.architecture?.output_modalities?.includes('speech')
+              : modality !== 'chat' ||
+            (/^(openai|google)\//.test(model.id || '') &&
+              model.architecture?.input_modalities?.includes('text') &&
+              model.architecture?.output_modalities?.length === 1 &&
+              model.architecture.output_modalities[0] === 'text' &&
+              model.supports_streaming !== false &&
+              !/(?:^|[:/_.-])batch(?:$|[:/_.-])/i.test(model.id) &&
+              !/\(batch\)/i.test(model.name || '')),
         )
         .map((model: any) => ({
           id: model.id,
@@ -186,7 +196,13 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
           modality,
           contextLength: model.context_length,
           maxOutputTokens: model.top_provider?.max_completion_tokens,
-          capabilities: model.supported_parameters || [],
+          ...(modality === 'audio' ? { provider: model.id.split('/')[0] } : {}),
+          capabilities: modality === 'audio' ? {
+            responseFormat: model.id.startsWith('google/') ? 'pcm' : 'mp3',
+            // v3/v4 do not expose the same speed controls as the v2 family.
+            speeds: /^elevenlabs\/eleven-(flash|turbo|multilingual|monolingual)-v2(?:[.-]|$)/.test(model.id)
+              ? [0.75, 1, 1.1, 1.2] : [],
+          } : model.supported_parameters || [],
           inputModalities: model.architecture?.input_modalities || ['text'],
           voices: model.supported_voices || [],
           pricing: model.pricing || {},

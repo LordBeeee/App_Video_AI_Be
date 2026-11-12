@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CloudinaryModule } from '../../common/cloudinary/cloudinary.module';
 import { Asset } from '../assets/entities/asset.entity';
+import { AssetsModule } from '../assets/assets.module';
 import { AiModel } from './catalog/ai-model.entity';
 import { WalletModule } from '../wallet/wallet.module';
 import { AiGeneration } from './generations/ai-generation.entity';
@@ -45,6 +46,7 @@ import { CustomAssetReconciliationService } from './custom-assets/custom-asset-r
     ]),
     CloudinaryModule,
     WalletModule,
+    AssetsModule,
   ],
   controllers: [
     CatalogController,

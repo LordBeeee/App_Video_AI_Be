@@ -5,6 +5,42 @@ import * as streamifier from 'streamifier';
 
 @Injectable()
 export class CloudinaryService {
+  async getResourceSize(url: string, stored?: { publicId: string; resourceType: string; deliveryType: string }): Promise<number> {
+    const target = this.storageIdentity(url, stored);
+    const resource = await cloudinary.api.resource(target.publicId, {
+      resource_type: target.resourceType, type: target.deliveryType, timeout: 30_000,
+    }) as { bytes?: unknown };
+    const bytes = Number(resource.bytes);
+    if (resource.bytes == null || !Number.isSafeInteger(bytes) || bytes < 0) throw new Error('Không xác định được dung lượng file');
+    return bytes;
+  }
+
+  storageIdentity(url: string, stored?: { publicId: string; resourceType: string; deliveryType: string }) {
+    if (stored?.publicId && ['image','video','raw'].includes(stored.resourceType) && ['upload','private','authenticated'].includes(stored.deliveryType)) return { publicId: stored.publicId, resourceType: stored.resourceType, deliveryType: stored.deliveryType };
+    const parsed = new URL(url);
+    const prefix = `/${this.configService.getOrThrow('CLOUDINARY_CLOUD_NAME')}/`;
+    if (parsed.hostname !== 'res.cloudinary.com' || !parsed.pathname.startsWith(prefix)) {
+      throw new Error('Không xác định được file Cloudinary thuộc hệ thống');
+    }
+    const [resourceType, deliveryType, ...parts] = parsed.pathname.slice(prefix.length).split('/');
+    if (!['image', 'video', 'raw'].includes(resourceType) || deliveryType !== 'upload') {
+      throw new Error('Định dạng Cloudinary không được hỗ trợ');
+    }
+    const version = parts.findIndex((part) => /^v\d+$/.test(part));
+    if (version >= 0) parts.splice(0, version + 1);
+    else while (parts.length && /^(so_|c_|w_|h_|q_|f_)/.test(parts[0])) parts.shift();
+    const publicId = decodeURIComponent(parts.join('/')).replace(resourceType === 'raw' ? /$^/ : /\.[^/.]+$/, '');
+    if (!publicId) throw new Error('Thiếu public ID Cloudinary');
+    return { publicId, resourceType, deliveryType };
+  }
+
+  async destroyResource(target: { publicId: string; resourceType: string; deliveryType: string }) {
+    const options = {
+      resource_type: target.resourceType, type: target.deliveryType, invalidate: true, timeout: 30_000,
+    };
+    const result = await cloudinary.uploader.destroy(target.publicId, options);
+    if (!['ok', 'not found'].includes(result.result)) throw new Error('Cloudinary chưa xác nhận xóa file');
+  }
   private uploadError(error: unknown) {
     const detail = this.errorDetail(error);
     return new BadGatewayException(`Cloudinary: ${detail.message || 'Tải file lên thất bại. Vui lòng thử lại.'}`);
@@ -84,7 +120,7 @@ export class CloudinaryService {
     buffer: Buffer,
     folder: string,
     publicId: string,
-  ): Promise<{ secureUrl: string; durationSeconds: number | null; fileSizeBytes: number | null }> {
+  ): Promise<{ secureUrl: string; durationSeconds: number | null; fileSizeBytes: number | null; publicId: string }> {
     return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         { folder, public_id: publicId, resource_type: 'video', format: 'mp3' },
@@ -92,6 +128,7 @@ export class CloudinaryService {
           if (error) return reject(this.uploadError(error));
           resolve({
             secureUrl: result!.secure_url,
+            publicId: result!.public_id,
             durationSeconds: result!.duration ?? null,
             fileSizeBytes: result!.bytes ?? null,
           });

@@ -80,7 +80,8 @@ export class KlingService {
     });
     if (
       assets.length !== ids.length ||
-      assets.some((asset) => asset.assetType !== elementType)
+      assets.some((asset) => asset.assetType !== elementType ||
+        ['processing','failed'].includes((asset.metadata as Record<string, any>)?.deleteStatus))
     )
       throw new BadRequestException('Tài nguyên tham chiếu không hợp lệ');
     if (
@@ -211,6 +212,7 @@ export class KlingService {
     });
     if (
       !sample ||
+      ['processing','failed'].includes((sample.metadata as Record<string, any>)?.deleteStatus) ||
       !['audio', 'video'].includes(sample.assetType) ||
       (sample.mimeType &&
         ![

@@ -14,6 +14,9 @@ import { Conversation } from './conversation.entity';
 import { PricingQuote } from '../pricing/pricing-quote.entity';
 import { OpenRouterService } from '../openrouter.service';
 import { PricingService } from '../pricing/pricing.service';
+import { CatalogService } from '../catalog/catalog.service';
+import { chatContent, chatDocuments } from './chat-documents';
+import { chargeQuoteVnd } from '../pricing/pricing-calculator';
 
 @Injectable()
 export class ChatService {
@@ -29,6 +32,7 @@ export class ChatService {
     private readonly pricing: PricingService,
     private readonly wallets: WalletService,
     private readonly openRouter: OpenRouterService,
+    private readonly catalog: CatalogService,
   ) {}
 
   async createConversation(
@@ -36,6 +40,7 @@ export class ChatService {
     body: { modelSlug: string; title?: string },
   ) {
     if (!body.modelSlug) throw new BadRequestException('Model là bắt buộc');
+    await this.catalog.find('chat', body.modelSlug);
     return this.conversations.save(
       this.conversations.create({
         userId,
@@ -45,11 +50,37 @@ export class ChatService {
     );
   }
 
-  list(userId: number) {
-    return this.conversations.find({
+  async list(userId: number) {
+    const conversations = await this.conversations.find({
       where: { userId },
       order: { updatedAt: 'DESC' },
       take: 50,
+    });
+    if (!conversations.length) return [];
+    const costs: Array<{ id: string; total: string; linked: string; messages: string }> = await this.generations.query(`
+      SELECT c.id, COALESCE(cost.total, 0) AS total, COALESCE(cost.linked, 0) AS linked,
+             (SELECT COUNT(*) FROM public.chat_messages m
+              WHERE m.conversation_id = c.id AND m.role = 'user') AS messages
+      FROM public.conversations c
+      LEFT JOIN (
+        SELECT g.options->>'conversationId' AS conversation_id, COUNT(*) AS linked,
+               SUM(CASE WHEN h.status = 'settled' THEN h.settled_amount_vnd ELSE 0 END) AS total
+        FROM public.ai_generations g
+        LEFT JOIN public.wallet_holds h ON h.id = g.wallet_hold_id AND h.user_id = g.user_id
+        WHERE g.user_id = $1 AND g.modality = 'chat'
+          AND g.options->>'conversationId' = ANY($2::text[])
+        GROUP BY g.options->>'conversationId'
+      ) cost ON cost.conversation_id = c.id::text
+      WHERE c.user_id = $1 AND c.id = ANY($2::uuid[])
+    `, [userId, conversations.map((conversation) => conversation.id)]);
+    const byId = new Map(costs.map((cost) => [cost.id, cost]));
+    return conversations.map((conversation) => {
+      const cost = byId.get(conversation.id);
+      return {
+        ...conversation,
+        totalChargedVnd: Number(cost?.total || 0),
+        costComplete: Number(cost?.linked || 0) >= Number(cost?.messages || 0),
+      };
     });
   }
 
@@ -83,6 +114,7 @@ export class ChatService {
     const content = String(body.content || '').trim();
     if (!content) throw new BadRequestException('Tin nhắn không được để trống');
     const conversation = await this.ownedConversation(userId, conversationId);
+    await this.catalog.find('chat', conversation.modelSlug);
     const quote = await this.pricing.getValidQuote(
       userId,
       body.quoteId,
@@ -90,10 +122,16 @@ export class ChatService {
     );
     if (
       quote.modality !== 'chat' ||
-      quote.modelSlug !== conversation.modelSlug
+      quote.modelSlug !== conversation.modelSlug ||
+      (quote.request?.options?.conversationId && quote.request.options.conversationId !== conversationId)
     ) {
       throw new BadRequestException('Báo giá không khớp hội thoại');
     }
+    const documents = chatDocuments(quote.request?.options?.documents);
+    const history = await this.pricing.chatHistory(userId, conversationId);
+    if (quote.request?.chatContextHash &&
+        quote.request.chatContextHash !== this.pricing.chatHistoryHash(history))
+      throw new BadRequestException('Hội thoại đã thay đổi, vui lòng lấy báo giá mới');
     const hold = await this.wallets.hold(
       userId,
       quote.id,
@@ -106,6 +144,7 @@ export class ChatService {
         conversationId,
         role: 'user',
         content,
+        documents,
       }),
     );
     const generation = await this.generations.save(
@@ -117,7 +156,7 @@ export class ChatService {
         modelSlug: quote.modelSlug,
         status: 'processing',
         prompt: content,
-        options: quote.request?.options || {},
+        options: { ...quote.request?.options, conversationId },
         outputUrls: [],
         usage: {},
         estimatedMinVnd: Number(quote.minPriceVnd),
@@ -137,16 +176,11 @@ export class ChatService {
 
     let providerGenerationId = '';
     try {
-      const history = await this.messages.find({
-        where: { conversationId },
-        order: { createdAt: 'ASC' },
-        take: 40,
-      });
       const upstream = await this.openRouter.streamChat({
         model: quote.modelSlug,
-        messages: history.map((message) => ({
+        messages: [...history, userMessage].map((message) => ({
           role: message.role,
-          content: message.content,
+          content: chatContent(message.content, message.documents),
         })),
         stream: true,
         max_tokens: Number(quote.request?.options?.maxOutputTokens || 1024),
@@ -189,16 +223,12 @@ export class ChatService {
           /* quote maximum remains the settlement fallback */
         }
       }
-      const charge = Number.isFinite(actualUsd)
-        ? Math.min(
-            Number(quote.maxPriceVnd),
-            Math.ceil(
-              actualUsd *
-                Number(quote.usdVndRate) *
-                (1 + Number(quote.markupRate)),
-            ),
-          )
-        : Number(quote.maxPriceVnd);
+      const charge = chargeQuoteVnd(
+        Number(quote.maxPriceVnd),
+        Number(quote.usdVndRate),
+        Number(quote.markupRate),
+        actualUsd,
+      );
       const assistant = await this.messages.save(
         this.messages.create({
           conversationId,
@@ -243,13 +273,11 @@ export class ChatService {
         }
       }
       if (billedUsd != null) {
-        const charge = Math.min(
+        const charge = chargeQuoteVnd(
           Number(quote.maxPriceVnd),
-          Math.ceil(
-            billedUsd *
-              Number(quote.usdVndRate) *
-              (1 + Number(quote.markupRate)),
-          ),
+          Number(quote.usdVndRate),
+          Number(quote.markupRate),
+          billedUsd,
         );
         generation.actualCostUsd = String(billedUsd);
         generation.chargedVnd = charge;

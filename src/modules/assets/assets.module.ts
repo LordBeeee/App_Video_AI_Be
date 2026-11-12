@@ -1,3 +1,4 @@
+import { AssetDeletionService } from './asset-deletion.service';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Asset } from './entities/asset.entity';
@@ -13,7 +14,7 @@ import { AiGenerationAsset } from '../ai-platform/generations/ai-generation-asse
     CloudinaryModule,
   ],
   controllers: [AssetsController],
-  providers: [AssetsService],
+  providers: [AssetsService, AssetDeletionService],
   exports: [AssetsService],
 })
 export class AssetsModule {}
