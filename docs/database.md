@@ -8,6 +8,9 @@ Use an empty PostgreSQL database. `npm run db:setup` executes
 For existing installations, run `migrations/202610280001_generation_poll_schedule.sql`
 before deploying the generation polling changes. It adds the schedule column and
 index used by the background video reconciler.
+Run `migrations/202610280002_video_sync_diagnostics.sql` before deploying the
+video sync diagnostics changes. It adds provider status, processing stage, and
+retry error details to existing generation rows.
 It creates the tables used by the current backend and seeds role IDs 1 and 2.
 It refuses to run when a `roles` table already exists. Do not use it against
 an existing installation.
