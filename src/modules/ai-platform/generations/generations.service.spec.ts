@@ -27,6 +27,71 @@ describe('GenerationsService library quota admission', () => {
   });
 });
 
+describe('GenerationsService speech generation', () => {
+  const setup = (provider: 'google' | 'elevenlabs') => {
+    const model = {
+      provider, voices: ['voice-a'],
+      capabilities: { responseFormat: provider === 'google' ? 'pcm' : 'mp3', speeds: provider === 'google' ? [] : [0.75, 1, 1.1, 1.2] },
+    };
+    const quote = {
+      id: 'quote-1', modality: 'audio', modelSlug: `${provider}/tts`,
+      maxPriceVnd: 4000, minPriceVnd: 1, usdVndRate: '25000', markupRate: '0',
+      request: { options: { voice: 'voice-a', speed: 1 }, units: { maxOutputTokens: 16384 } },
+    };
+    let stored: any;
+    const generations = {
+      create: jest.fn((value) => ({ ...value, id: 'audio-1' })),
+      save: jest.fn(async (value) => { stored = value; return value; }),
+      findOneOrFail: jest.fn(async () => stored),
+    };
+    const wallets = {
+      hold: jest.fn().mockResolvedValue({ id: 'hold-1' }),
+      attachGeneration: jest.fn(), settle: jest.fn(), release: jest.fn(),
+    };
+    const openRouter = {
+      generateSpeech: jest.fn().mockResolvedValue({ data: Buffer.from('audio'), headers: { 'x-generation-id': 'gen-audio' } }),
+      getGeneration: jest.fn().mockResolvedValue({ data: { total_cost: 0.01 } }),
+    };
+    const cloudinary = { uploadAudioBuffer: jest.fn().mockResolvedValue({ secureUrl: 'https://example.com/audio.mp3', durationSeconds: 2, publicId: 'audio-1', fileSizeBytes: 100 }) };
+    const outputAssets = { saveOutput: jest.fn() };
+    const service = new GenerationsService(
+      generations as never, {} as never, { save: jest.fn() } as never, {} as never,
+      { getValidQuote: async () => quote } as never, { find: async () => model } as never,
+      wallets as never, openRouter as never, {} as never, cloudinary as never,
+      outputAssets as never, {} as never, {} as never, {} as never,
+      { assertStorageAvailable: jest.fn() } as never,
+    );
+    return { service, quote, wallets, openRouter, cloudinary, outputAssets, generations };
+  };
+
+  it.each(['google', 'elevenlabs'] as const)('uses the existing upload, library and wallet flow for %s', async (provider) => {
+    const { service, quote, wallets, openRouter, cloudinary, outputAssets } = setup(provider);
+    const result = await service.create(7, { quoteId: quote.id, prompt: 'Xin chào' });
+    expect(openRouter.generateSpeech).toHaveBeenCalledWith({
+      model: `${provider}/tts`, input: 'Xin chào', voice: 'voice-a',
+      response_format: provider === 'google' ? 'pcm' : 'mp3',
+      provider: { options: provider === 'google'
+        ? { 'google-ai-studio': { maxOutputTokens: 16384 } }
+        : { elevenlabs: { voice_settings: { speed: 1 } } } },
+    });
+    expect(cloudinary.uploadAudioBuffer).toHaveBeenCalledTimes(1);
+    expect(outputAssets.saveOutput).toHaveBeenCalledWith('audio-1', 7, 'audio', 'https://example.com/audio.mp3', expect.any(Object));
+    expect(wallets.settle).toHaveBeenCalledWith('hold-1', 250, { generationId: 'audio-1', modality: 'audio' });
+    expect(wallets.release).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: 'succeeded', chargedVnd: 250, outputUrls: ['https://example.com/audio.mp3'] });
+  });
+
+  it.each(['provider', 'upload'] as const)('releases the hold and records failure if %s fails', async (stage) => {
+    const { service, wallets, openRouter, cloudinary, generations } = setup('google');
+    (stage === 'provider' ? openRouter.generateSpeech : cloudinary.uploadAudioBuffer)
+      .mockRejectedValueOnce(new Error('Speech failed'));
+    await expect(service.create(7, { quoteId: 'quote-1', prompt: 'Xin chào' })).rejects.toThrow('Speech failed');
+    expect(wallets.release).toHaveBeenCalledWith('hold-1', 'Speech failed');
+    expect(wallets.settle).not.toHaveBeenCalled();
+    expect(generations.save).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'failed', errorMessage: 'Speech failed' }));
+  });
+});
+
 describe('GenerationsService video status', () => {
   it('reads a submitted video without calling the provider', async () => {
     const generation = {

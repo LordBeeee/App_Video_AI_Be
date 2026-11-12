@@ -227,6 +227,7 @@ CREATE TABLE chat_messages (
   conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   role VARCHAR(20) NOT NULL,
   content TEXT NOT NULL,
+  documents JSONB NOT NULL DEFAULT '[]'::jsonb,
   input_tokens INTEGER,
   output_tokens INTEGER,
   cost_usd NUMERIC(18,10),

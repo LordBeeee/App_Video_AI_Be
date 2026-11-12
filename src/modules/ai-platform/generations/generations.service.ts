@@ -416,7 +416,7 @@ export class GenerationsService {
       if (quote.modality === 'image')
         generation = await this.createImage(generation, quote, catalogModel);
       if (quote.modality === 'audio')
-        generation = await this.createAudio(generation, quote);
+        generation = await this.createAudio(generation, quote, catalogModel);
       if (quote.modality === 'video')
         generation = await this.createVideo(generation, catalogModel);
       const hydrated = await this.generations.findOneOrFail({
@@ -518,15 +518,31 @@ export class GenerationsService {
     return generation;
   }
 
-  private async createAudio(generation: AiGeneration, quote: PricingQuote) {
+  private async createAudio(generation: AiGeneration, quote: PricingQuote, model: any) {
     const opts = generation.options || {};
     if (!opts.voice) throw new BadRequestException('Vui lòng chọn giọng đọc');
+    if (!model.voices?.includes(opts.voice)) {
+      throw new BadRequestException('Giọng đọc không được model hỗ trợ');
+    }
+    const isGoogle = model.provider === 'google';
+    const maxOutputTokens = Number(quote.request?.units?.maxOutputTokens);
+    if (isGoogle && (!Number.isInteger(maxOutputTokens) || maxOutputTokens <= 0)) {
+      throw new BadRequestException('Vui lòng lấy lại báo giá âm thanh');
+    }
+    const speed = opts.speed ?? 1;
+    if (speed !== 1 && !model.capabilities?.speeds?.includes(speed)) {
+      throw new BadRequestException('Tốc độ không được model hỗ trợ');
+    }
     const response = await this.openRouter.generateSpeech({
       model: generation.modelSlug,
       input: generation.prompt,
       voice: opts.voice,
-      response_format: 'mp3',
-      speed: Number(opts.speed || 1),
+      response_format: model.capabilities.responseFormat,
+      ...(isGoogle ? {
+        provider: { options: { 'google-ai-studio': { maxOutputTokens } } },
+      } : model.capabilities.speeds?.length ? {
+        provider: { options: { elevenlabs: { voice_settings: { speed } } } },
+      } : {}),
     });
     const providerGenerationId = String(
       response.headers['x-generation-id'] || '',

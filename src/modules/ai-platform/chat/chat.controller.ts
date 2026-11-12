@@ -10,7 +10,11 @@ import {
   Post,
   Res,
   UseGuards,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { extractChatDocument } from './chat-documents';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ChatService } from './chat.service';
@@ -21,6 +25,12 @@ import { SendMessageDto } from './dto/send-message.dto';
 @UseGuards(JwtAuthGuard)
 export class ChatController {
   constructor(private readonly chat: ChatService) {}
+
+  @Post('documents')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024, files: 1 } }))
+  document(@UploadedFile() file?: { originalname: string; buffer: Buffer }) {
+    return extractChatDocument(file);
+  }
 
   @Post()
   create(

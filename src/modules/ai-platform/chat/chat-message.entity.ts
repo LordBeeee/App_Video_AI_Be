@@ -19,6 +19,9 @@ export class ChatMessage {
   @Column({ type: 'text' })
   content!: string;
 
+  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
+  documents!: import('./chat-documents').ChatDocument[];
+
   @Column({ name: 'input_tokens', type: 'int', nullable: true })
   inputTokens?: number;
 
